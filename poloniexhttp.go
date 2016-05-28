@@ -129,6 +129,11 @@ func (p *Poloniex) Run() {
 		go p.WebsocketClient()
 	}
 
+	ema13 := ema(13)
+	ema41 := ema(41)
+	// TODO get open margin orders, set dir based on that..
+	var last dir
+
 	for p.Enabled {
 		for _, x := range p.EnabledPairs {
 			currency := x
@@ -138,11 +143,58 @@ func (p *Poloniex) Run() {
 					log.Println(err)
 					return
 				}
-				log.Printf("Poloniex %s Last %f High %f Low %f Volume %f\n", currency, ticker[currency].Last, ticker[currency].High24Hr, ticker[currency].Low24Hr, ticker[currency].QuoteVolume)
-				//AddExchangeInfo(p.GetName(), currency[0:3], currency[3:], ticker.Last, ticker.Volume)
+				t := ticker[currency]
+
+				f := ema13(t.Last)
+				s := ema41(t.Last)
+				if f != notTrained && s != notTrained {
+					if last == none { // set so we can see direction
+						if f > s {
+							last = long
+						} else {
+							last = short
+						}
+					} else {
+						if f < s && last == long {
+							log.Printf("msg=SHORT price=%f", t.Last)
+							last = short
+						} else if f > s && last == short {
+							log.Printf("msg=LONG price=%f", t.Last)
+							last = long
+						}
+					}
+				}
+				log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
 			}()
 		}
 		time.Sleep(time.Second * p.RESTPollingDelay)
+	}
+}
+
+type dir uint8
+
+const (
+	none dir = iota
+	short
+	long
+
+	train      = 20 // TODO need to SMA until N instead of this
+	notTrained = -1
+)
+
+// EMA = Price(t) * k + EMA(y) * (1 – k)
+// k = 2/(N+1)
+func ema(n int) func(float64) float64 {
+	var avg float64
+	k := 2 / (float64(n) + 1)
+	var t int
+	return func(f float64) float64 {
+		avg = f*k + avg*(1-k)
+		if t < train {
+			t++
+			return notTrained
+		}
+		return avg
 	}
 }
 
