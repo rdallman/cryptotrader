@@ -17,6 +17,8 @@ type line struct {
 	Last float64 `logfmt:Last`
 }
 
+const fee = .0025
+
 func main() {
 	flag.Parse()
 	args := flag.Args()
@@ -31,62 +33,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	for fast := 0; fast < 20; fast++ {
-		for slow := 0; slow < 50; slow++ {
-			for tick := 0; tick < 60; tick++ {
-				f.Seek(0, 0)
-				tryEma(fast, slow, tick, f)
+	scanner := bufio.NewScanner(f)
+
+	var lines []line
+	for scanner.Scan() {
+		var l line
+		if err := logfmt.Unmarshal(scanner.Bytes(), &l); err != nil {
+			fmt.Fprintln(os.Stderr, err) // sweet baby jesus why '14t'
+			continue
+		}
+		lines = append(lines, l)
+	}
+
+	var maxProfit, fees float64
+	var bestF, bestS, bestT int
+
+	for fast := 1; fast <= 50; fast++ {
+		for slow := 1; slow <= 100; slow++ {
+			for tick := 1; tick <= 120; tick++ {
+				profit, f := tryEma(fast, slow, tick, lines)
+				if profit > maxProfit {
+					maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
+				}
 			}
 		}
 	}
+	//fast, slow, tick := 1, 4, 50
+	//profit := tryEma(fast, slow, tick, lines)
+	//maxProfit, bestF, bestS, bestT = profit, fast, slow, tick
+	log.Printf("best: f=%d s=%d t=%d profit=%f fees=%f", bestF, bestS, bestT, maxProfit, fees)
 }
 
-func tryEma(fast, slow, tickC int, f *os.File) {
-	scanner := bufio.NewScanner(f)
-
-	lines := make(chan line, 1024)
-	go func() {
-		for scanner.Scan() {
-			var l line
-			if err := logfmt.Unmarshal(scanner.Bytes(), &l); err != nil {
-				fmt.Fprintln(os.Stderr, err) // sweet baby jesus why '14t'
-				continue
-			}
-			lines <- l
-		}
-		close(lines)
-	}()
+func tryEma(fast, slow, tickC int, lines []line) (float64, float64) {
 
 	// TODO get open margin orders, set dir based on that..
 
-	emaFast := ema(13)
-	emaSlow := ema(41)
+	emaFast := ema(fast)
+	emaSlow := ema(slow)
+	signal := ema(2)
+	_ = signal
 	var lastDir dir
 	var tick int
-	var lastBuy, profit float64
+	var lastBuy, profit, fees float64
 
-	for l := range lines {
-		//if l.Msg == "" { continue }
-		//if lastPrice == 0 { // first trade
-		//lastPrice = l.Price
-		//continue
-		//}
-
-		//last := lastPrice
-		//// profit calc w/i log
-		//var profit float64
-		//switch l.Msg {
-		//case "SHORT": // were long, now short
-		//profit = l.Price - lastPrice
-		//lastPrice = l.Price
-		//case "LONG": // were short, now long
-		//profit = lastPrice - l.Price
-		//lastPrice = l.Price
-		//}
-		//profits += profit
-
-		//log.Println("money", "last", last, "price", l.Price, "pos", l.Msg, "profit", profit, "total_profit", profits) // TODO time held
-
+	for _, l := range lines {
 		if l.Last == 0 {
 			continue
 		}
@@ -94,12 +84,15 @@ func tryEma(fast, slow, tickC int, f *os.File) {
 
 		// profit calc from log of prices
 		if tick%tickC == 0 {
-			trade(l.Last, &lastBuy, &profit, &lastDir, emaFast, emaSlow)
+			tradeMACD(l.Last, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow, signal)
+			//tradeEMA(l.Last, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow)
 		}
 	}
+
+	return profit, fees
 }
 
-func trade(price float64, lastBuy, profit *float64, last *dir, emaFast, emaSlow func(float64) float64) {
+func tradeEMA(price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow func(float64) float64) {
 	f := emaFast(price)
 	s := emaSlow(price)
 	if f != notTrained && s != notTrained {
@@ -115,8 +108,10 @@ func trade(price float64, lastBuy, profit *float64, last *dir, emaFast, emaSlow 
 
 				if *lastBuy > 0 {
 					p := price - *lastBuy
-					log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
-					*profit += p
+					//				log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+					*fees += .00002
+					*fees += (*lastBuy * fee)
+					*profit += p - (*lastBuy * fee)
 				}
 				*lastBuy = price
 			} else if f > s && *last == short {
@@ -124,21 +119,56 @@ func trade(price float64, lastBuy, profit *float64, last *dir, emaFast, emaSlow 
 
 				if *lastBuy > 0 {
 					p := *lastBuy - price
-					log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
-					*profit += p
+					//					log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+					*fees += (*lastBuy * fee)
+					*profit += p - (*lastBuy * fee)
 				}
 				*lastBuy = price
 			}
+		}
+	}
+}
 
-			//switch l.Msg {
-			//case "SHORT": // were long, now short
-			//profit = l.Price - lastPrice
-			//lastPrice = l.Price
-			//case "LONG": // were short, now long
-			//profit = lastPrice - l.Price
-			//lastPrice = l.Price
-			//}
+func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow, signal func(float64) float64) {
+	f := emaFast(price)
+	s := emaSlow(price)
 
+	// MACD Line: (12-day EMA - 26-day EMA)
+	// Signal Line: 9-day EMA of MACD Line
+	macd := f - s
+	v := signal(macd)
+
+	if f != notTrained && s != notTrained {
+		if *last == none { // set so we can see direction, TODO should base off open orders
+			if f > s {
+				*last = long
+			} else {
+				*last = short
+			}
+		} else {
+			// TODO get out if below signal or below 0 / oppo for short... sit in cash yo
+			if macd < 0 && macd < v && *last == long { // TODO fudge 25% ?
+				*last = short
+
+				if *lastBuy > 0 {
+					p := price - *lastBuy
+					//log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+					*fees += .00002
+					*fees += (*lastBuy * fee)
+					*profit += p - (*lastBuy * fee)
+				}
+				*lastBuy = price
+			} else if macd > 0 && macd > v && *last == short { // TODO fudge 25% ?
+				*last = long
+
+				if *lastBuy > 0 {
+					p := *lastBuy - price
+					//log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+					*fees += (*lastBuy * fee)
+					*profit += p - (*lastBuy * fee)
+				}
+				*lastBuy = price
+			}
 		}
 	}
 }
