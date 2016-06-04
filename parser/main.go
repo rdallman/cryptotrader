@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
+	"github.com/aybabtme/rgbterm"
 	"github.com/kr/logfmt"
 )
 
@@ -20,6 +23,7 @@ type line struct {
 const fee = .0025
 
 func main() {
+	lb := flag.Bool("lb", false, "do leaderboard map")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) < 1 {
@@ -27,7 +31,119 @@ func main() {
 		os.Exit(1)
 	}
 
-	f, err := os.Open(args[0])
+	if *lb {
+		leaderboard(args[0])
+	} else {
+		sim(args[0])
+	}
+}
+
+func leaderboard(file string) {
+	f, err := os.Open(file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	scanner := bufio.NewScanner(f)
+
+	// NOTE: have to pull over these settings or there be dragons, we could search for them but blech
+	const maxFast = 50
+	const maxSlow = 100
+	const maxTick = 24
+	var min float64 = 1000000000000000000000000000000000000000000.
+	var avg [maxFast * maxSlow * maxTick]float64
+	var start bool
+	for scanner.Scan() {
+		b := scanner.Bytes()
+		if !start {
+			if bytes.HasPrefix(b, []byte("leaderboard")) {
+				start = true
+				scanner.Scan() // skip new line
+			}
+			continue
+		}
+		if bytes.Contains(b, []byte("best")) {
+			break // over
+		}
+
+		m := bytes.Split(b, []byte(":"))
+		rank, err := strconv.ParseFloat(string(bytes.TrimSpace(m[1])), 64)
+		errNil(err)
+		if rank < min {
+			min = rank
+		}
+
+		list := bytes.Split(m[0], []byte("/"))
+		fast, err := strconv.Atoi(string(bytes.TrimSpace(list[0])))
+		errNil(err)
+		slow, err := strconv.Atoi(string(bytes.TrimSpace(list[1])))
+		errNil(err)
+		tick, err := strconv.Atoi(string(bytes.TrimSpace(list[2])))
+		errNil(err)
+
+		avg[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick] = rank
+	}
+
+	graph(avg[:], maxFast, maxSlow, maxTick, min)
+}
+
+func graph(matrix []float64, maxFast, maxSlow, maxTick int, min float64) {
+	// Print top axis
+	fmt.Printf("f/s") // skip axis width
+	for x := 1; x <= maxTick; x++ {
+		fmt.Printf(" %-6d", x)
+	}
+	fmt.Println()
+
+	// Print matrix
+	for fast := 1; fast <= maxFast; fast++ {
+		for slow := 1; slow <= maxSlow; slow++ {
+			// Print left axis
+			fmt.Printf("%3d/%-3d ", fast, slow)
+			for tick := 1; tick <= maxTick; tick++ { // up to 2 hours
+				p := matrix[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick]
+				r, g, b := color(p, min, min*2)                                              // bluer is better
+				fmt.Printf("%s ", rgbterm.String(fmt.Sprintf("%-6.f", p), r, g, b, 0, 0, 0)) // Multiply by some constant to make it human readable
+			}
+			fmt.Println()
+		}
+	}
+}
+
+func color(v, vmin, vmax float64) (rd, gn, bl uint8) {
+	r, g, b := 1.0, 1.0, 1.0 // white
+	if v < vmin {
+		v = vmin
+	}
+	if v > vmax {
+		v = vmax
+	}
+	dv := vmax - vmin
+	if v < (vmin + 0.25*dv) {
+		r = 0
+		g = 4 * (v - vmin) / dv
+	} else if v < (vmin + 0.5*dv) {
+		r = 0
+		b = 1 + 4*(vmin+0.25*dv-v)/dv
+	} else if v < (vmin + 0.75*dv) {
+		r = 4 * (v - vmin - 0.5*dv) / dv
+		b = 0
+	} else {
+		g = 1 + 4*(vmin+0.75*dv-v)/dv
+		b = 0
+	}
+	return uint8(r * 255), uint8(g * 255), uint8(b * 255)
+}
+
+func errNil(err error) {
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func sim(file string) {
+	f, err := os.Open(file)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -48,19 +164,19 @@ func main() {
 	var maxProfit, fees float64
 	var bestF, bestS, bestT int
 
-	for fast := 1; fast <= 50; fast++ {
-		for slow := 1; slow <= 100; slow++ {
-			for tick := 1; tick <= 120; tick++ {
-				profit, f := tryEma(fast, slow, tick, lines)
-				if profit > maxProfit {
-					maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
-				}
-			}
-		}
-	}
-	//fast, slow, tick := 1, 4, 50
-	//profit := tryEma(fast, slow, tick, lines)
-	//maxProfit, bestF, bestS, bestT = profit, fast, slow, tick
+	//for fast := 1; fast <= 50; fast++ {
+	//for slow := 1; slow <= 100; slow++ {
+	//for tick := 1; tick <= 120; tick++ {
+	//profit, f := tryEma(fast, slow, tick, lines)
+	//if profit > maxProfit {
+	//maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
+	//}
+	//}
+	//}
+	//}
+	fast, slow, tick := 10, 1, 5
+	profit, fs := tryEma(fast, slow, tick, lines)
+	maxProfit, fees, bestF, bestS, bestT = profit, fs, fast, slow, tick
 	log.Printf("best: f=%d s=%d t=%d profit=%f fees=%f", bestF, bestS, bestT, maxProfit, fees)
 }
 
@@ -153,7 +269,6 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 				if *lastBuy > 0 {
 					p := price - *lastBuy
 					//log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
-					*fees += .00002
 					*fees += (*lastBuy * fee)
 					*profit += p - (*lastBuy * fee)
 				}

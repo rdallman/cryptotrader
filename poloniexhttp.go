@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/aybabtme/rgbterm"
 	"log"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
+
+	"github.com/aybabtme/rgbterm"
 )
 
 const (
@@ -139,7 +141,102 @@ func (p *Poloniex) Run() {
 		//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
 		//}()
 
-		start := strconv.Itoa(int(time.Now().Add(-24 * time.Hour * 180).Unix()))
+		p.tryAll(currency)
+
+		//days := 7
+		//p.tryOne(currency, days, 8, 1, 5)
+		//p.tryOne(currency, days, 10, 1, 5)
+		//p.tryOne(currency, days, 12, 1, 5)
+		//p.tryOne(currency, days, 11, 22, 90)
+		//p.tryOne(currency, days, 42, 48, 90)
+		//p.tryOne(currency, days, 7, 80, 60)
+		//p.tryOne(currency, days, 9, 90, 90)
+
+		//days = 90
+		//p.tryOne(currency, days, 8, 1, 5)
+		//p.tryOne(currency, days, 10, 1, 5)
+		//p.tryOne(currency, days, 12, 1, 5)
+		//p.tryOne(currency, days, 11, 22, 90)
+		//p.tryOne(currency, days, 42, 48, 90)
+		//p.tryOne(currency, days, 7, 80, 60)
+		//p.tryOne(currency, days, 9, 90, 90)
+
+		//days = 180
+		//p.tryOne(currency, days, 8, 1, 5)
+		//p.tryOne(currency, days, 10, 1, 5)
+		//p.tryOne(currency, days, 12, 1, 5)
+		//p.tryOne(currency, days, 11, 22, 90)
+		//p.tryOne(currency, days, 42, 48, 90)
+		//p.tryOne(currency, days, 7, 80, 60)
+		//p.tryOne(currency, days, 9, 90, 90)
+
+		//time.Sleep(time.Second * p.RESTPollingDelay)
+		//}
+	}
+}
+
+func (p *Poloniex) tryOne(currency string, days, fast, slow, tick int) {
+	sig := 2
+	tick /= 5
+
+	start := strconv.Itoa(int(time.Now().Add(-24 * time.Hour * time.Duration(days)).Unix()))
+	end := strconv.Itoa(int(time.Now().Unix()))
+	period := "300" // min allowed is 5 min candles; use for everything
+	c, err := p.GetChartData(currency, start, end, period)
+	if err != nil {
+		log.Fatal("fucked up chart data:", err)
+	}
+
+	var first float64
+	if len(c) > 0 {
+		first = c[0].Close
+	} else {
+		log.Print("no chart data, this will prove futile")
+	}
+
+	profit, f := tryEma(first, fast, slow, sig, tick, c)
+
+	trades := f
+	f *= fee
+
+	log.Printf("%s profit: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f trades=%f", currency, fast, slow, tick*5, 100*(profit/1), profit, f, first, trades)
+
+	// TODO print out each trade
+}
+
+func (p *Poloniex) tryAll(currency string) {
+	var maxProfit, fees, first float64
+	var bestF, bestS, bestT int
+
+	const maxFast = 50
+	const maxSlow = 100
+	const maxTick = 36
+	//maxSig := 10
+	sig := 2
+
+	// y = tick, x = fast/slow ema combos
+	matrix := make([][]float64, maxFast*maxSlow)
+
+	var cur, avg [maxFast * maxSlow * maxTick]rank
+
+	var left [][3]int
+	for fast := 1; fast <= maxFast; fast++ {
+		for slow := 1; slow <= maxSlow; slow++ {
+			left = append(left, [3]int{fast, slow, 0})
+			for tick := 1; tick <= maxTick; tick++ {
+				p := [3]int{fast, slow, tick}
+				avg[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick] = rank{p: p}
+			}
+		}
+	}
+
+	trials := 180
+	shortest := 180
+	_ = shortest
+
+	for days := shortest; days <= trials; days++ {
+		log.Println("trial day:", days)
+		start := strconv.Itoa(int(time.Now().Add(-24 * time.Hour * time.Duration(days)).Unix()))
 		end := strconv.Itoa(int(time.Now().Unix()))
 		period := "300" // min allowed is 5 min candles; use for everything
 		c, err := p.GetChartData(currency, start, end, period)
@@ -147,78 +244,91 @@ func (p *Poloniex) Run() {
 			log.Fatal("fucked up chart data:", err)
 		}
 
-		min := 100000000000000000000000.
-		var maxProfit, fees, first float64
-		var bestF, bestS, bestSig, bestT int
-
 		if len(c) > 0 {
 			first = c[0].Close
 		} else {
 			log.Print("no chart data, this will prove futile")
 		}
 
-		maxFast := 50
-		maxSlow := 100
-		maxSig := 10
-
-		// y = tick, x = fast/slow ema combos
-		matrix := make([][]float64, maxFast*maxSlow)
-		var left [][2]int
+		var i int
 		for fast := 1; fast <= maxFast; fast++ {
 			for slow := 1; slow <= maxSlow; slow++ {
-				left = append(left, [2]int{fast, slow})
-			}
-		}
-		var i int
-		for sig := 1; sig <= maxSig; sig++ {
-			for fast := 1; fast <= maxFast; fast++ {
-				for slow := 1; slow <= maxSlow; slow++ {
-					matrix[i] = make([]float64, 24)
-					for tick := 1; tick <= 24; tick++ { // up to 2 hours
-						profit, f := tryEma(first, fast, slow, sig, tick, c)
-						matrix[i][tick-1] = 100 * (profit / first)
-						if profit > maxProfit {
-							maxProfit, fees, bestF, bestS, bestSig, bestT = profit, f, fast, slow, sig, tick
-						}
-						if profit < min {
-							min = profit
-						}
+				matrix[i] = make([]float64, maxTick)
+				for tick := 1; tick <= maxTick; tick++ { // up to 2 hours
+					profit, f := tryEma(first, fast, slow, sig, tick, c)
+					p := 100 * (profit / 1)
+					matrix[i][tick-1] = p
+					if profit > maxProfit {
+						maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
 					}
-					i++
+					cur[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick] = rank{p: [3]int{fast, slow, tick}, a: p}
 				}
+				i++
 			}
 		}
 
-		//fast, slow, tick := 13, 41, 12
-		//profit, f := tryEma(fast, slow, tick, c)
-		//maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
-		log.Printf("%s best: f=%d s=%d sig=%d t=%d profit%%=%f profit=%f fees=%f price=%f", currency, bestF, bestS, bestSig, bestT*5, 100*(maxProfit/first), maxProfit, fees, first)
-
-		// find best box, by fast ema
-		var maxBox float64
-		var top, leftN, bottom, right int
-		for i := 0; i < len(matrix)/(maxSlow*maxSig); i++ {
-			maxSubBox, t, l, b, r := max_contiguous_submatrix(matrix[i*maxSlow : (i+1)*maxSlow])
-			t += (i * maxSlow)
-			b += (i * maxSlow)
-			// TODO siggy?
-			log.Printf("%s box: maxBox=%f top=%d/%d left=%d bottom=%d/%d right=%d", currency, maxSubBox, left[t][0], left[t][1], l, left[b][0], left[b][1], r)
-			if maxSubBox > maxBox {
-				maxBox, top, leftN, bottom, right = maxSubBox, t, l, b, r
-			}
+		// sort by profits, highest profit first (= lowest rank = best)
+		sort.Stable(profits(cur[:]))
+		for i, c := range cur {
+			// track total ranks thus far, average later
+			avg[(c.p[2]-1)+(c.p[1]-1)*maxTick+(c.p[0]-1)*maxSlow*maxTick].a += float64(i + 1)
 		}
-
-		log.Printf("%s best box: maxBox=%f top=%d/%d left=%d bottom=%d/%d right=%d", currency, maxBox, left[top][0], left[top][1], leftN, left[bottom][0], left[bottom][1], right)
-		graph(matrix, left, 100*(min/first), 100*(maxProfit/first))
 	}
 
-	//time.Sleep(time.Second * p.RESTPollingDelay)
-	//}
+	for i := range avg {
+		avg[i].a /= float64(trials - shortest + 1)
+	}
+
+	sort.Stable(ranks(avg[:]))
+
+	fmt.Println("leaderboard: [fast/slow/tick]: [avg rank]")
+	fmt.Println()
+	for i, a := range avg {
+		fmt.Printf("%10d: %3d/%3d/%3d: %9.3f\n", i+1, a.p[0], a.p[1], a.p[2], a.a)
+	}
+
+	//fast, slow, tick := 13, 41, 12
+	//profit, f := tryEma(fast, slow, tick, c)
+	//maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
+	log.Printf("%s best: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f", currency, bestF, bestS, bestT*5, 100*(maxProfit/1), maxProfit, fees, first)
+
+	// find best box, by fast ema
+	var maxBox float64
+	var top, leftN, bottom, right int
+	for i := 0; i < len(matrix)/(maxSlow); i++ {
+		maxSubBox, t, l, b, r := max_contiguous_submatrix(matrix[i*maxSlow : (i+1)*maxSlow])
+		t += (i * maxSlow)
+		b += (i * maxSlow)
+		log.Printf("%s box: maxBox=%f top=%d/%d left=%d bottom=%d/%d right=%d", currency, maxSubBox, left[t][0], left[t][1], l, left[b][0], left[b][1], r)
+		if maxSubBox > maxBox {
+			maxBox, top, leftN, bottom, right = maxSubBox, t, l, b, r
+		}
+	}
+
+	log.Printf("%s best box: maxBox=%f top=%d/%d left=%d bottom=%d/%d right=%d", currency, maxBox, left[top][0], left[top][1], leftN, left[bottom][0], left[bottom][1], right)
+	graph(matrix, left, 100*(maxProfit/1))
 }
 
-func graph(matrix [][]float64, left [][2]int, min, max float64) {
+type rank struct {
+	p [3]int
+	a float64
+}
+
+type ranks []rank
+
+func (r ranks) Len() int           { return len(r) }
+func (r ranks) Less(i, j int) bool { return r[i].a < r[j].a } // lowest first
+func (r ranks) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+
+type profits []rank
+
+func (r profits) Len() int           { return len(r) }
+func (r profits) Less(i, j int) bool { return r[i].a > r[j].a } // highest first
+func (r profits) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+
+func graph(matrix [][]float64, left [][3]int, max float64) {
 	// Print top axis
-	fmt.Printf("      ") // skip axis width
+	fmt.Printf("f/s") // skip axis width
 	for x := 1; x <= len(matrix[0]); x++ {
 		fmt.Printf(" %-6d ", x)
 	}
@@ -231,7 +341,7 @@ func graph(matrix [][]float64, left [][2]int, min, max float64) {
 		// Print row of values
 		for _, count := range col {
 			p := count
-			r, g, b := color(p, 1000, 2000)
+			r, g, b := color(p, max*.25, max*.5)
 			fmt.Printf("%s ", rgbterm.String(fmt.Sprintf("%-6.f", p), r, g, b, 0, 0, 0)) // Multiply by some constant to make it human readable
 		}
 		fmt.Println()
@@ -369,7 +479,6 @@ func tryEma(start float64, fast, slow, sig, tickC int, lines []PoloniexChartData
 			//tradeEMA(l.Close, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow)
 		}
 	}
-
 	return profit, fees
 }
 
@@ -389,6 +498,7 @@ func tradeEMA(start, price float64, lastBuy, profit, fees *float64, last *dir, e
 
 				if *lastBuy > 0 {
 					p := price - *lastBuy
+
 					// log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
 					*fees += (*lastBuy * fee)
 					*profit += p - (*lastBuy * fee)
@@ -425,40 +535,36 @@ func tradeMACD(start, price float64, lastBuy, profit, fees *float64, last *dir, 
 			} else {
 				*last = short
 			}
-			*lastBuy = price
 		} else {
-			// TODO get out if below signal or below 0 / oppo for short... sit in cash yo
-			if macd < 0 && macd < v && *last == long { // TODO fudge 25% ?
+			if macd < 0 && /*((v - macd) / v) > .01 &&*/ macd < v && *last == long { // TODO fudge 25% ? TODO confirm < 0 ?
 				*last = short
 
 				if *lastBuy > 0 {
-					p := price - *lastBuy
+					p := 1 * ((price - *lastBuy) / *lastBuy)
 
-					// compound? TODO
-					b := (*lastBuy + *profit) / *lastBuy // shares we can buy
-					p *= b
+					// TODO this is compound, which ends up weighting later profits higher, which sucks (but shiny)
+					//b := (*lastBuy + *profit) / *lastBuy // shares we can buy
+					//p *= b
 
-					f := *lastBuy * p * fee
 					//					log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+					f := fee //* (1 + *profit)
 					*fees += f
 					*profit += p - f
 				}
 				*lastBuy = price
-			} else if macd > 0 && macd > v && *last == short { // TODO fudge 25% ?
+			} else if macd > 0 && /*((macd - v) / macd) > .01 &&*/ macd > v && *last == short { // TODO fudge 25% ? TODO confirm > 0 ?
 				*last = long
 
 				if *lastBuy > 0 {
-					p := *lastBuy - price
+					// change profit in terms of eth_btc to be in terms of eth
+					p := 1 * ((*lastBuy - price) / *lastBuy)
 
-					// compound? TODO
-					b := (*lastBuy + *profit) / *lastBuy // shares we can buy
-					p *= b
-
-					f := *lastBuy * p * fee
 					//					log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+					f := fee //  * (1 + *profit)
+
+					//const lending = .0002
 					*fees += f
-					*fees += (.0002 * p)
-					*profit += p - f - .0002
+					*profit += p - f
 				}
 				*lastBuy = price
 			}
