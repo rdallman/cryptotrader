@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"sort"
 	"strconv"
@@ -134,44 +135,118 @@ func (p *Poloniex) Run() {
 		go p.WebsocketClient()
 	}
 
+	currency := "BTC_ETH"
 	//	for p.Enabled {
 
-	for _, currency := range p.EnabledPairs {
-		//go func() {
-		//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
-		//}()
+	//	for _, currency := range p.EnabledPairs {
+	//go func() {
+	//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
+	//}()
 
-		p.tryAll(currency)
+	// TODO sims lay below, extract somehow
+	//p.tryAll(currency)
 
-		//days := 7
-		//p.tryOne(currency, days, 8, 1, 5)
-		//p.tryOne(currency, days, 10, 1, 5)
-		//p.tryOne(currency, days, 12, 1, 5)
-		//p.tryOne(currency, days, 11, 22, 90)
-		//p.tryOne(currency, days, 42, 48, 90)
-		//p.tryOne(currency, days, 7, 80, 60)
-		//p.tryOne(currency, days, 9, 90, 90)
+	//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150} {
+	//p.tryOne(currency, days, 5, 1, 95)
+	//p.tryOne(currency, days, 42, 48, 90)
+	//p.tryOne(currency, days, 9, 90, 90)
+	//p.tryOne(currency, days, 29, 37, 90)
+	//p.tryOne(currency, days, 17, 30, 120)
+	//p.tryOne(currency, days, 22, 31, 120)
+	//p.tryOne(currency, days, 47, 56, 60)
+	//p.tryOne(currency, days, 47, 48, 60)
+	//p.tryOne(currency, days, 47, 81, 135)
+	//p.tryOne(currency, days, 47, 81, 120)
+	//p.tryOne(currency, days, 50, 85, 120)
+	//p.tryOne(currency, days, 36, 44, 130)
+	//p.tryOne(currency, days, 50, 92, 150)
+	//p.tryOne(currency, days, 50, 80, 150)
+	//p.tryOne(currency, days, 39, 50, 125)
+	//}
 
-		//days = 90
-		//p.tryOne(currency, days, 8, 1, 5)
-		//p.tryOne(currency, days, 10, 1, 5)
-		//p.tryOne(currency, days, 12, 1, 5)
-		//p.tryOne(currency, days, 11, 22, 90)
-		//p.tryOne(currency, days, 42, 48, 90)
-		//p.tryOne(currency, days, 7, 80, 60)
-		//p.tryOne(currency, days, 9, 90, 90)
+	//time.Sleep(time.Second * p.RESTPollingDelay)
+	//}
+	//	}
+}
 
-		//days = 180
-		//p.tryOne(currency, days, 8, 1, 5)
-		//p.tryOne(currency, days, 10, 1, 5)
-		//p.tryOne(currency, days, 12, 1, 5)
-		//p.tryOne(currency, days, 11, 22, 90)
-		//p.tryOne(currency, days, 42, 48, 90)
-		//p.tryOne(currency, days, 7, 80, 60)
-		//p.tryOne(currency, days, 9, 90, 90)
+func (p *Poloniex) realTrade(currency string) {
+	acc, err := p.GetMarginAccountSummary()
+	if err != nil {
+		log.Fatalf("couldn't get margin account info: %v", err)
+	}
 
-		//time.Sleep(time.Second * p.RESTPollingDelay)
-		//}
+	log.Println("account balance: ", acc.TotalValue)
+	log.Println("account info: ", acc)
+
+	openI, err := p.GetMarginPosition(currency)
+	if err != nil {
+		log.Fatalf("couldn't get margin account info: %v", err)
+	}
+	open := openI.(PoloniexMarginPosition)
+
+	var pos dir
+	switch open.Type {
+	case "none":
+		pos = none
+	case "long":
+		pos = long
+	case "short":
+		pos = short
+	}
+	lastBuy := open.BasePrice
+
+	log.Printf("open pos: type=%s price=%f amount=%f total=%f p/l=%f lending_fees=%f", open.Type, open.BasePrice, open.Amount, open.Total, open.ProfitLoss, open.LendingFees)
+
+	var profit, fees float64
+	fast, slow, sig := 17, 30, 2 // TODO make these configuramable ?
+	const candle = 7200          // 2hr candle; candlestick period in seconds; valid values are 300, 900, 1800, 7200, 14400, and 86400
+	emaFast := ema(fast)
+	emaSlow := ema(slow)
+	signal := ema(sig)
+
+	// get enough back data to seed the fast / slow emas so we can start trading..
+	lastData := time.Now()
+	timemachine := time.Duration(int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
+	start := strconv.Itoa(int(lastData.Add(-timemachine).Unix()))
+	end := strconv.Itoa(int(lastData.Unix()))
+	period := strconv.Itoa(candle)
+	chart, err := p.GetChartData(currency, start, end, period)
+	if err != nil {
+		log.Fatalf("issue going back in time; check the flux capacitor. err:", err)
+	}
+
+	// initialize all the things
+	for _, pt := range chart {
+		tradeMACD(pt.Close, &lastBuy, &profit, &fees, &pos, emaFast, emaSlow, signal)
+	}
+
+	var price float64
+	for ; ; time.Sleep(candle * time.Second) {
+		var errCount int
+		// retry for 2 minutes, and then bail
+		try := lastData.Add(candle * time.Second)
+		tryS := strconv.Itoa(int(try.Unix()))
+		for ; ; time.Sleep(4 * time.Second) {
+			// just get one data point
+			// TODO does this work? ticker will be imprecise, esp. with retries. could get 2 pts and discard 1
+			c, err := p.GetChartData(currency, tryS, tryS, period)
+			if err != nil {
+				errCount++
+				if errCount > 30 { // TODO assert that sleep * this is < fast ema
+					log.Fatalf("couldn't get price, maybe polo is down? err:", err)
+				}
+				continue
+			}
+			if len(c) < 1 {
+				log.Fatalf("fix the fuckin robot man")
+			}
+			price = c[0].Close
+			lastData = try
+			break
+		}
+
+		tradeMACD(price, &lastBuy, &profit, &fees, &pos, emaFast, emaSlow, signal)
+		// TODO execute the trade
 	}
 }
 
@@ -194,12 +269,9 @@ func (p *Poloniex) tryOne(currency string, days, fast, slow, tick int) {
 		log.Print("no chart data, this will prove futile")
 	}
 
-	profit, f := tryEma(first, fast, slow, sig, tick, c)
+	profit, f := tryEma(fast, slow, sig, tick, c)
 
-	trades := f
-	f *= fee
-
-	log.Printf("%s profit: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f trades=%f", currency, fast, slow, tick*5, 100*(profit/1), profit, f, first, trades)
+	log.Printf("%s profit: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f", currency, fast, slow, tick*5, 100*(profit/1), profit, f, first)
 
 	// TODO print out each trade
 }
@@ -230,8 +302,8 @@ func (p *Poloniex) tryAll(currency string) {
 		}
 	}
 
-	trials := 180
-	shortest := 180
+	trials := 35
+	shortest := 35
 	_ = shortest
 
 	for days := shortest; days <= trials; days++ {
@@ -459,7 +531,7 @@ func color(v, vmin, vmax float64) (rd, gn, bl uint8) {
 	return uint8(r * 255), uint8(g * 255), uint8(b * 255)
 }
 
-func tryEma(start float64, fast, slow, sig, tickC int, lines []PoloniexChartData) (float64, float64) {
+func tryEma(fast, slow, sig, tickC int, lines []PoloniexChartData) (float64, float64) {
 	// TODO get open margin orders, set dir based on that..
 
 	emaFast := ema(fast)
@@ -475,14 +547,87 @@ func tryEma(start float64, fast, slow, sig, tickC int, lines []PoloniexChartData
 
 		// profit calc from log of prices
 		if tick%tickC == 0 {
-			tradeMACD(start, l.Close, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow, signal)
+			tradeMACD(l.Close, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow, signal)
 			//tradeEMA(l.Close, &lastBuy, &profit, &fees, &lastDir, emaFast, emaSlow)
 		}
 	}
 	return profit, fees
 }
 
-func tradeEMA(start, price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow func(float64) float64) {
+func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow, signal func(float64) float64) {
+	f := emaFast(price)
+	s := emaSlow(price)
+
+	// MACD Line: (12-day EMA - 26-day EMA)
+	// Signal Line: 9-day EMA of MACD Line
+	macd := f - s
+	v := signal(macd)
+
+	if f != notTrained && s != notTrained {
+		// TODO set direction should be based off open orders
+		// go long if macd > 0 && macd > v
+		// close long if macd < 0 || macd < v
+		// go short if macd < 0 && macd < v
+		// close short if macd > 0 || macd > v
+
+		// TODO calculate exposure
+
+		// close order first
+		if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd < v) {
+			// close long
+			mult := 1. + *profit // NOTE: add profit back for compound
+			p := mult * ((price - *lastBuy) / *lastBuy)
+			// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
+
+			//log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+			f := fee * mult
+			*fees += f
+			*profit += p - f
+			*last = none
+		} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd > v) {
+			// close short
+			mult := 1. // + *profit // NOTE: add profit back for compound
+
+			p := mult * ((*lastBuy - price) / *lastBuy)
+			// change profit in terms of eth_btc to be in terms of eth
+
+			// log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+			//const lending = .0002
+			f := (fee * mult) + (.0002 * mult)
+
+			*fees += f
+			*profit += p - f
+			*last = none
+		}
+
+		if *last == none && *lastBuy == 0 { // nope
+			if macd < v {
+				*last = short
+			} else {
+				*last = long
+			}
+			// don't set price, just wait for a crossover
+		}
+
+		// open new ones, if necessary
+		if /*macd < 0 &&*/ macd < v /*&&((v - macd) / v) > .01*/ { // TODO fudge 25% ? TODO confirm < 0 ?
+			// only go short if on the first trade, we were looking for a short xover or we were in cash.
+			// i.e. don't make the first trade until the first xover...
+			if *last == none || (*lastBuy == 0 && *last == long) {
+				*lastBuy = price
+				*last = short
+			}
+		} else if /*macd > 0 &&*/ macd > v /*&&((macd - v) / macd) > .01*/ { // TODO fudge 25% ? TODO confirm > 0 ?
+			if *last == none || (*lastBuy == 0 && *last == short) {
+				*last = long
+				*lastBuy = price
+			}
+		}
+	}
+}
+
+// TODO needs updating... was worse than macd
+func tradeEMA(price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow func(float64) float64) {
 	f := emaFast(price)
 	s := emaSlow(price)
 	if f != notTrained && s != notTrained {
@@ -519,67 +664,14 @@ func tradeEMA(start, price float64, lastBuy, profit, fees *float64, last *dir, e
 	}
 }
 
-func tradeMACD(start, price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow, signal func(float64) float64) {
-	f := emaFast(price)
-	s := emaSlow(price)
-
-	// MACD Line: (12-day EMA - 26-day EMA)
-	// Signal Line: 9-day EMA of MACD Line
-	macd := f - s
-	v := signal(macd)
-
-	if f != notTrained && s != notTrained {
-		if *last == none { // set so we can see direction, TODO should base off open orders
-			if f > s {
-				*last = long
-			} else {
-				*last = short
-			}
-		} else {
-			if macd < 0 && /*((v - macd) / v) > .01 &&*/ macd < v && *last == long { // TODO fudge 25% ? TODO confirm < 0 ?
-				*last = short
-
-				if *lastBuy > 0 {
-					p := 1 * ((price - *lastBuy) / *lastBuy)
-
-					// TODO this is compound, which ends up weighting later profits higher, which sucks (but shiny)
-					//b := (*lastBuy + *profit) / *lastBuy // shares we can buy
-					//p *= b
-
-					//					log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
-					f := fee //* (1 + *profit)
-					*fees += f
-					*profit += p - f
-				}
-				*lastBuy = price
-			} else if macd > 0 && /*((macd - v) / macd) > .01 &&*/ macd > v && *last == short { // TODO fudge 25% ? TODO confirm > 0 ?
-				*last = long
-
-				if *lastBuy > 0 {
-					// change profit in terms of eth_btc to be in terms of eth
-					p := 1 * ((*lastBuy - price) / *lastBuy)
-
-					//					log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
-					f := fee //  * (1 + *profit)
-
-					//const lending = .0002
-					*fees += f
-					*profit += p - f
-				}
-				*lastBuy = price
-			}
-		}
-	}
-}
-
 type dir uint8
 
 const (
 	none dir = iota
 	short
 	long
+	cash
 
-	train      = 20 // TODO need to SMA until N instead of this
 	notTrained = -1
 )
 
@@ -591,7 +683,7 @@ func ema(n int) func(float64) float64 {
 	var t int
 	return func(f float64) float64 {
 		avg = f*k + avg*(1-k)
-		if t < train {
+		if t < n {
 			t++
 			return notTrained
 		}
