@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"io/ioutil"
@@ -261,7 +262,7 @@ func JSONDecode(data []byte, to interface{}) error {
 	err := json.Unmarshal(data, &to)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("error unmarshaling json: %v text: %s", err, data)
 	}
 
 	return nil

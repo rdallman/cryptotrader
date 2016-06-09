@@ -50,7 +50,7 @@ func leaderboard(file string) {
 	// NOTE: have to pull over these settings or there be dragons, we could search for them but blech
 	const maxFast = 50
 	const maxSlow = 100
-	const maxTick = 24
+	const maxTick = 36
 	var min float64 = 1000000000000000000000000000000000000000000.
 	var avg [maxFast * maxSlow * maxTick]float64
 	var start bool
@@ -68,13 +68,13 @@ func leaderboard(file string) {
 		}
 
 		m := bytes.Split(b, []byte(":"))
-		rank, err := strconv.ParseFloat(string(bytes.TrimSpace(m[1])), 64)
+		rank, err := strconv.ParseFloat(string(bytes.TrimSpace(m[2])), 64)
 		errNil(err)
 		if rank < min {
 			min = rank
 		}
 
-		list := bytes.Split(m[0], []byte("/"))
+		list := bytes.Split(m[1], []byte("/"))
 		fast, err := strconv.Atoi(string(bytes.TrimSpace(list[0])))
 		errNil(err)
 		slow, err := strconv.Atoi(string(bytes.TrimSpace(list[1])))

@@ -24,6 +24,7 @@ const (
 	POLONIEX_GENERATE_NEW_ADDRESS   = "generateNewAddress"
 	POLONIEX_DEPOSITS_WITHDRAWALS   = "returnDepositsWithdrawals"
 	POLONIEX_ORDERS                 = "returnOpenOrders"
+	POLONIEX_ORDER_TRADES           = "returnOrderTrades"
 	POLONIEX_TRADE_HISTORY          = "returnTradeHistory"
 	POLONIEX_ORDER_BUY              = "buy"
 	POLONIEX_ORDER_SELL             = "sell"
@@ -45,7 +46,7 @@ const (
 	POLONIEX_ACTIVE_LOANS           = "returnActiveLoans"
 	POLONIEX_AUTO_RENEW             = "toggleAutoRenew"
 
-	fee = .0025
+	fee = .0015
 )
 
 type Poloniex struct {
@@ -143,25 +144,39 @@ func (p *Poloniex) Run() {
 	//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
 	//}()
 
+	toTrade := "ETH"
+	log.Printf("balance: %s %f", toTrade, p.balance(toTrade))
+
+	// p.realTrade(toTrade, currency)
+
+	// BUY THE FARM
+	//p.allIn(toTrade, currency, true)
+	//p.CloseMarginPosition(currency)
+
+	// SELL THE FARM
+	//p.allIn(toTrade, currency, false)
+	//p.CloseMarginPosition(currency)
+
 	// TODO sims lay below, extract somehow
-	//p.tryAll(currency)
+	p.tryAll(currency)
 
 	//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150} {
-	//p.tryOne(currency, days, 5, 1, 95)
-	//p.tryOne(currency, days, 42, 48, 90)
-	//p.tryOne(currency, days, 9, 90, 90)
+	//log.Printf("days: %d", days)
+	//p.tryOne(currency, days, 5, 1, 5)
+	//p.tryOne(currency, days, 4, 5, 120)
 	//p.tryOne(currency, days, 29, 37, 90)
+	//p.tryOne(currency, days, 29, 37, 120)
 	//p.tryOne(currency, days, 17, 30, 120)
 	//p.tryOne(currency, days, 22, 31, 120)
-	//p.tryOne(currency, days, 47, 56, 60)
-	//p.tryOne(currency, days, 47, 48, 60)
-	//p.tryOne(currency, days, 47, 81, 135)
 	//p.tryOne(currency, days, 47, 81, 120)
 	//p.tryOne(currency, days, 50, 85, 120)
-	//p.tryOne(currency, days, 36, 44, 130)
-	//p.tryOne(currency, days, 50, 92, 150)
-	//p.tryOne(currency, days, 50, 80, 150)
-	//p.tryOne(currency, days, 39, 50, 125)
+	//p.tryOne(currency, days, 4, 39, 120)
+	//p.tryOne(currency, days, 37, 47, 120)
+	//p.tryOne(currency, days, 9, 8, 120)
+	//p.tryOne(currency, days, 33, 63, 120)
+	//p.tryOne(currency, days, 46, 49, 120)
+	//p.tryOne(currency, days, 11, 40, 120)
+	//p.tryOne(currency, days, 19, 23, 120)
 	//}
 
 	//time.Sleep(time.Second * p.RESTPollingDelay)
@@ -169,14 +184,27 @@ func (p *Poloniex) Run() {
 	//	}
 }
 
-func (p *Poloniex) realTrade(currency string) {
-	acc, err := p.GetMarginAccountSummary()
+func (p *Poloniex) balance(side string) float64 {
+	acc, err := p.GetAvailableBalances()
 	if err != nil {
 		log.Fatalf("couldn't get margin account info: %v", err)
 	}
 
-	log.Println("account balance: ", acc.TotalValue)
-	log.Println("account info: ", acc)
+	return acc["margin"][side]
+}
+
+func (p *Poloniex) allIn(side, currency string, buy bool) {
+	bal := p.balance(side)
+	log.Printf("account balance %s: %f", side, bal)
+
+	// BUY
+	p.trade(currency, bal, buy)
+}
+
+func (p *Poloniex) realTrade(side, currency string) {
+	// TODO close open orders when this shuts down?
+
+	// TODO close open orders before trading? can fix later..
 
 	openI, err := p.GetMarginPosition(currency)
 	if err != nil {
@@ -195,18 +223,22 @@ func (p *Poloniex) realTrade(currency string) {
 	}
 	lastBuy := open.BasePrice
 
-	log.Printf("open pos: type=%s price=%f amount=%f total=%f p/l=%f lending_fees=%f", open.Type, open.BasePrice, open.Amount, open.Total, open.ProfitLoss, open.LendingFees)
+	// TODO add available balances from margin account to this number for amount we trade
+
+	// NOTE: if we happen to have an open position, let back data determine whether we should keep it open
+
+	log.Printf("open pos found: type=%s price=%f amount=%f total=%f p/l=%f lending_fees=%f", open.Type, open.BasePrice, open.Amount, open.Total, open.ProfitLoss, open.LendingFees)
 
 	var profit, fees float64
-	fast, slow, sig := 17, 30, 2 // TODO make these configuramable ?
-	const candle = 7200          // 2hr candle; candlestick period in seconds; valid values are 300, 900, 1800, 7200, 14400, and 86400
+	fast, slow, sig := 22, 31, 2 // TODO make these configuramable ?
+	const candle = 300           // 2hr candle; candlestick period in seconds; valid values are 300, 900, 1800, 7200, 14400, and 86400
 	emaFast := ema(fast)
 	emaSlow := ema(slow)
 	signal := ema(sig)
 
 	// get enough back data to seed the fast / slow emas so we can start trading..
 	lastData := time.Now()
-	timemachine := time.Duration(int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
+	timemachine := time.Duration(1+int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
 	start := strconv.Itoa(int(lastData.Add(-timemachine).Unix()))
 	end := strconv.Itoa(int(lastData.Unix()))
 	period := strconv.Itoa(candle)
@@ -217,19 +249,28 @@ func (p *Poloniex) realTrade(currency string) {
 
 	// initialize all the things
 	for _, pt := range chart {
+		log.Printf("backdata t=%v high=%f low=%f open=%f close=%f %%=%f volume=%f", time.Unix(int64(pt.Date), 0), pt.High, pt.Low, pt.Open, pt.Close, 100*((pt.Close-pt.Open)/pt.Open), pt.Volume)
 		tradeMACD(pt.Close, &lastBuy, &profit, &fees, &pos, emaFast, emaSlow, signal)
+		lastData = time.Unix(int64(pt.Date), 0)
 	}
 
-	var price float64
-	for ; ; time.Sleep(candle * time.Second) {
+	nextTime := lastData.Add(candle * time.Second).Sub(time.Now())
+	log.Printf("next tick %v", nextTime)
+	tick := time.After(nextTime)
+
+	var pt PoloniexChartData
+	for {
+		<-tick
+
 		var errCount int
 		// retry for 2 minutes, and then bail
-		try := lastData.Add(candle * time.Second)
-		tryS := strconv.Itoa(int(try.Unix()))
+
+		// TODO this doesn't gracefully handle missing ticks but trying to use lastData..lastData+candle kept giving lastData pt so fuck it
 		for ; ; time.Sleep(4 * time.Second) {
+			tryS := strconv.Itoa(int(lastData.Unix()))
+			tryE := strconv.Itoa(int(lastData.Add(candle * time.Second).Unix()))
 			// just get one data point
-			// TODO does this work? ticker will be imprecise, esp. with retries. could get 2 pts and discard 1
-			c, err := p.GetChartData(currency, tryS, tryS, period)
+			c, err := p.GetChartData(currency, tryS, tryE, period)
 			if err != nil {
 				errCount++
 				if errCount > 30 { // TODO assert that sleep * this is < fast ema
@@ -237,16 +278,235 @@ func (p *Poloniex) realTrade(currency string) {
 				}
 				continue
 			}
-			if len(c) < 1 {
-				log.Fatalf("fix the fuckin robot man")
+
+			if len(c) < 1 || c[0].Date == 0 { // invalid, try again.. it takes a few tries to get next candle
+				continue
 			}
-			price = c[0].Close
-			lastData = try
+
+			pt = c[0]
+			for _, p := range c { // sometimes we get 2 data points, probably should check these are contiguous but blech
+				if time.Unix(int64(p.Date), 0).Unix() != lastData.Unix() {
+					pt = p
+					break
+				}
+			}
+
+			if time.Unix(int64(pt.Date), 0).Unix() == lastData.Unix() {
+				log.Printf("got same data point again, retrying. fuck")
+				continue
+			}
+
+			lastData = time.Unix(int64(pt.Date), 0)
 			break
 		}
 
-		tradeMACD(price, &lastBuy, &profit, &fees, &pos, emaFast, emaSlow, signal)
-		// TODO execute the trade
+		nextTime := lastData.Add(candle * time.Second).Sub(time.Now())
+		log.Printf("next tick %v", nextTime)
+
+		tick = time.After(nextTime)
+
+		log.Printf("tick t=%v high=%f low=%f open=%f close=%f %%=%f volume=%f pos=%s@%f", time.Unix(int64(pt.Date), 0), pt.High, pt.Low, pt.Open, pt.Close, 100*((pt.Close-pt.Open)/pt.Open), pt.Volume, pos, lastBuy)
+
+		last := pos
+		beforeProfit := profit
+		tradeMACD(pt.Close, &lastBuy, &profit, &fees, &pos, emaFast, emaSlow, signal)
+
+		// execute trade if our position changed (but not our first time determining direction)
+		if last != pos && !(lastBuy == 0 && last == none) {
+			log.Printf("profits: total=%f total%%=%f last=%f last%%=%f", profit, 100*(profit/1), profit-beforeProfit, 100*((profit-beforeProfit)/beforeProfit))
+
+			_, err = p.CloseMarginPosition(currency)
+			if err != nil {
+				log.Printf("WARN couldn't close margin position, maybe there isn't one? err=%v", err)
+			}
+
+			// close our previous order and then go all in, so that we invest any earnings
+			// (and don't take margin if we lost dollas and go short)
+
+			switch pos {
+			case none:
+			case long, short:
+				//				p.allIn(side, currency, pos == long)
+			}
+		}
+	}
+}
+
+// TODO add retries to this so we don't miss a move
+func (p *Poloniex) trade(currency string, amount float64, buy bool) {
+	str := "LONG"
+	if !buy {
+		str = "SHORT"
+	}
+
+	// try to be a maker and save on fees. we're already guessing direction so adding
+	// an order slightly in front of it, if it doesn't hit we probably don't want to be
+	// in that position anyway. TODO timeout and retry rest of order at better price?
+
+	// TODO test that flipping long/short closes other order
+
+	var maxLendingRate float64 = .005
+	// TODO calculate maxRate later
+	//if !buy {
+	//loansA, err := p.GetOpenLoanOffers()
+	//if err != nil {
+	//log.Printf("WARN couldn't get loan offers. currency=%s err=%v", currency, err)
+	//return
+	//}
+	//var filled float64
+	//for _, l := range loansA[currency] {
+	//maxLendingRate = l.Rate
+	//filled += amount
+	//if filled >= amount {
+	//break
+	//}
+	//}
+
+	//if filled < amount {
+	//log.Printf("WARN not enough loans open to fill short order, this could mean high fees")
+	//}
+
+	//// add 10% to make sure it fills
+	//const maxTolerableRate = .005 // .5% -- yikes
+	//if maxLendingRate+(maxLendingRate*.1) > maxTolerableRate {
+	//log.Printf("WARN not making trade because lending fees are above tolerable rates. rate=%f tolerable=%f", maxLendingRate, maxTolerableRate)
+	//return
+	//}
+	//}
+
+	bestPrice := func() (float64, error) {
+		tickA, err := p.GetTicker()
+		if err != nil {
+			log.Printf("WARN couldn't get ticker. currency=%s err=%v", currency, err)
+			return 0, err
+		}
+
+		tick := tickA[currency]
+
+		// try to take the maker fee, but not very hard so we don't wait...
+		var rate float64
+		const outFront = .00001 // .01%
+		if buy {
+			rate = tick.LowestAsk - (outFront * tick.LowestAsk)
+		} else {
+			rate = tick.HighestBid + (outFront * tick.HighestBid)
+		}
+		return rate, nil
+	}
+
+	// TODO jesus fuck clean this up
+
+	// TODO we could split the order across N orders and try to move the market a little ;)
+	rate, err := bestPrice()
+	if err != nil {
+		return
+	}
+
+	startRate := rate
+	var filled, avg float64
+	var trades uint64
+
+	log.Printf("opening trade %s %s %f@%f", currency, str, amount, rate)
+	postOnly := false // only take maker fee, TODO do this later? if it starts moving fast, would prefer to just get in so...
+	order, err := p.PlaceMarginOrder(currency, rate, amount, maxLendingRate, postOnly, buy)
+	if err != nil {
+		log.Printf("WARN couldn't place order. bailing for now. maybe postOnly=true? currency=%s rate=%f amount=%f lending_rate=%f buy=%v err=%v", currency, rate, amount, maxLendingRate, buy, err)
+		return
+	}
+
+	tradeIDs := make(map[int64]struct{}) // don't count trades twice
+	orderNum := order.OrderNumber
+
+	// avg = (amount1 * rate1) + (amount2 * rate2) + ...
+	//       ------------------------------------
+	//              amount1 + amount2 + ...
+
+	for _, t := range order.Trades {
+		tradeIDs[t.TradeID] = struct{}{}
+		trades++
+		filled += t.Amount
+		avg += t.Total // amount * rate
+		log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
+	}
+
+	// TODO need to make sure rounding isn't fucking us here
+	if filled == amount {
+		avg /= amount
+		log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
+		return // TODO done!
+	}
+
+	// check every 5s to see if our order filled, after 1m go change our order
+	start := time.Now()
+	for ; ; time.Sleep(5 * time.Second) {
+
+		// if it's been a minute, cancel our order first, then check trades, and then
+		// if we still need to place another order to fulfill the amount, do so.
+		if time.Since(start) > 1*time.Minute {
+			// NOTE: MoveOrder could partially fill while we're doing calculation, so
+			// we need to cancel and then put it another order.
+			log.Printf("canceling open order, will make new one if still not filled. order=%d", orderNum)
+			_, err := p.CancelOrder(orderNum)
+			if err != nil {
+				log.Printf("couldn't cancel order. maybe filled? order=%d err=%v", orderNum, err)
+			}
+		}
+
+		orderTrades, _ := p.GetOrderTrades(orderNum)
+		// ignore errors, we don't care if no trades were executed for this order (that's the point)
+
+		for _, t := range orderTrades {
+			if _, ok := tradeIDs[t.TradeID]; ok {
+				continue // don't count trades twice
+			}
+
+			tradeIDs[t.TradeID] = struct{}{}
+			trades++
+			filled += t.Amount
+			avg += t.Total // (amount * rate)
+			log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
+			start = time.Now() // update this so that we sit at this price for a minute longer since we filled something
+		}
+
+		// TODO rounding ?
+		if filled == amount {
+			avg /= amount
+			log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
+			return
+		}
+
+		// at this point, we cancelled the order, and we haven't yet filled it, so place another
+		if time.Since(start) > 1*time.Minute {
+			rate, err = bestPrice()
+			if err != nil {
+				return
+			}
+
+			log.Printf("re-opening trade at different price %s %s %f@%f", currency, str, amount-filled, rate)
+			order, err = p.PlaceMarginOrder(currency, rate, amount-filled, maxLendingRate, postOnly, buy)
+			if err != nil {
+				log.Printf("WARN couldn't place order. bailing. maybe postOnly=true? currency=%s rate=%f amount=%f lending_rate=%f buy=%v err=%v", currency, rate, amount, maxLendingRate, buy, err)
+				return
+			}
+
+			orderNum = order.OrderNumber
+			start = time.Now()
+
+			for _, t := range order.Trades {
+				tradeIDs[t.TradeID] = struct{}{}
+				trades++
+				filled += t.Amount
+				avg += t.Total // amount * rate
+				log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
+			}
+
+			// TODO need to make sure rounding isn't fucking us here
+			if filled == amount {
+				avg /= amount
+				log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
+				return // TODO done!
+			}
+		}
 	}
 }
 
@@ -284,7 +544,7 @@ func (p *Poloniex) tryAll(currency string) {
 	const maxSlow = 100
 	const maxTick = 36
 	//maxSig := 10
-	sig := 2
+	sig := 5
 
 	// y = tick, x = fast/slow ema combos
 	matrix := make([][]float64, maxFast*maxSlow)
@@ -302,8 +562,8 @@ func (p *Poloniex) tryAll(currency string) {
 		}
 	}
 
-	trials := 35
-	shortest := 35
+	trials := 120
+	shortest := 120
 	_ = shortest
 
 	for days := shortest; days <= trials; days++ {
@@ -327,7 +587,7 @@ func (p *Poloniex) tryAll(currency string) {
 			for slow := 1; slow <= maxSlow; slow++ {
 				matrix[i] = make([]float64, maxTick)
 				for tick := 1; tick <= maxTick; tick++ { // up to 2 hours
-					profit, f := tryEma(first, fast, slow, sig, tick, c)
+					profit, f := tryEma(fast, slow, sig, tick, c)
 					p := 100 * (profit / 1)
 					matrix[i][tick-1] = p
 					if profit > maxProfit {
@@ -563,8 +823,7 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 	macd := f - s
 	v := signal(macd)
 
-	if f != notTrained && s != notTrained {
-		// TODO set direction should be based off open orders
+	if f != notTrained && s != notTrained && v != notTrained {
 		// go long if macd > 0 && macd > v
 		// close long if macd < 0 || macd < v
 		// go short if macd < 0 && macd < v
@@ -575,23 +834,23 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		// close order first
 		if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd < v) {
 			// close long
-			mult := 1. + *profit // NOTE: add profit back for compound
+			mult := 1. // + *profit // NOTE: add profit back for compound
 			p := mult * ((price - *lastBuy) / *lastBuy)
 			// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
 
-			//log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+			// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
 			f := fee * mult
 			*fees += f
 			*profit += p - f
 			*last = none
 		} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd > v) {
 			// close short
-			mult := 1. // + *profit // NOTE: add profit back for compound
+			mult := 1. //+ *profit // NOTE: add profit back for compound
 
 			p := mult * ((*lastBuy - price) / *lastBuy)
 			// change profit in terms of eth_btc to be in terms of eth
 
-			// log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+			// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
 			//const lending = .0002
 			f := (fee * mult) + (.0002 * mult)
 
@@ -616,11 +875,13 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 			if *last == none || (*lastBuy == 0 && *last == long) {
 				*lastBuy = price
 				*last = short
+				//	log.Printf("msg=SHORT price=%f", price)
 			}
 		} else if /*macd > 0 &&*/ macd > v /*&&((macd - v) / macd) > .01*/ { // TODO fudge 25% ? TODO confirm > 0 ?
 			if *last == none || (*lastBuy == 0 && *last == short) {
 				*last = long
 				*lastBuy = price
+				//	log.Printf("msg=LONG price=%f", price)
 			}
 		}
 	}
@@ -670,10 +931,22 @@ const (
 	none dir = iota
 	short
 	long
-	cash
 
 	notTrained = -1
 )
+
+func (d dir) String() string {
+	switch d {
+	case none:
+		return "none"
+	case short:
+		return "short"
+	case long:
+		return "long"
+	default:
+		panic("invalid direction")
+	}
+}
 
 // EMA = Price(t) * k + EMA(y) * (1 – k)
 // k = 2/(N+1)
@@ -896,7 +1169,7 @@ type PoloniexCompleteBalances struct {
 	Currency map[string]PoloniexCompleteBalance
 }
 
-func (p *Poloniex) GetCompleteBalances() (PoloniexCompleteBalances, error) {
+func (p *Poloniex) GetCompleteBalances(typ string) (PoloniexCompleteBalances, error) {
 	var result interface{}
 	err := p.SendAuthenticatedHTTPRequest("POST", POLONIEX_BALANCES_COMPLETE, url.Values{}, &result)
 
@@ -1112,13 +1385,24 @@ func (p *Poloniex) GetAuthenticatedTradeHistory(currency, start, end string) (in
 	}
 }
 
+func (p *Poloniex) GetOrderTrades(orderID int64) ([]PoloniexResultingTrades, error) {
+	values := url.Values{}
+	values.Set("orderNumber", strconv.FormatInt(orderID, 10))
+
+	var result []PoloniexResultingTrades
+	err := p.SendAuthenticatedHTTPRequest("POST", POLONIEX_ORDER_TRADES, values, &result)
+
+	return result, err
+}
+
+// TODO no fees? :(
 type PoloniexResultingTrades struct {
 	Amount  float64 `json:"amount,string"`
 	Date    string  `json:"date"`
 	Rate    float64 `json:"rate,string"`
 	Total   float64 `json:"total,string"`
-	TradeID int64   `json:"tradeID,string"`
-	Type    string  `json:"type,string"`
+	TradeID int64   `json:"tradeID"`
+	Type    string  `json:"type"`
 }
 
 type PoloniexOrderResponse struct {
@@ -1279,6 +1563,30 @@ func (p *Poloniex) GetTradableBalances() (map[string]map[string]float64, error) 
 	return balances, nil
 }
 
+func (p *Poloniex) GetAvailableBalances() (map[string]map[string]float64, error) {
+	type Response struct {
+		Data map[string]map[string]interface{}
+	}
+	result := Response{}
+
+	err := p.SendAuthenticatedHTTPRequest("POST", POLONIEX_AVAILABLE_BALANCES, url.Values{}, &result.Data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	balances := make(map[string]map[string]float64)
+
+	for x, y := range result.Data {
+		balances[x] = make(map[string]float64)
+		for z, w := range y {
+			balances[x][z], _ = strconv.ParseFloat(w.(string), 64)
+		}
+	}
+
+	return balances, nil
+}
+
 func (p *Poloniex) TransferBalance(currency, from, to string, amount float64) (bool, error) {
 	values := url.Values{}
 	result := PoloniexGenericResponse{}
@@ -1321,7 +1629,7 @@ func (p *Poloniex) GetMarginAccountSummary() (PoloniexMargin, error) {
 	return result, nil
 }
 
-func (p *Poloniex) PlaceMarginOrder(currency string, rate, amount, lendingRate float64, buy bool) (PoloniexOrderResponse, error) {
+func (p *Poloniex) PlaceMarginOrder(currency string, rate, amount, lendingRate float64, postOnly, buy bool) (PoloniexOrderResponse, error) {
 	result := PoloniexOrderResponse{}
 	values := url.Values{}
 
@@ -1335,6 +1643,10 @@ func (p *Poloniex) PlaceMarginOrder(currency string, rate, amount, lendingRate f
 	values.Set("currencyPair", currency)
 	values.Set("rate", strconv.FormatFloat(rate, 'f', -1, 64))
 	values.Set("amount", strconv.FormatFloat(amount, 'f', -1, 64))
+
+	if postOnly {
+		values.Set("postOnly", "1")
+	}
 
 	if lendingRate != 0 {
 		values.Set("lendingRate", strconv.FormatFloat(lendingRate, 'f', -1, 64))
@@ -1547,7 +1859,7 @@ func (p *Poloniex) SendAuthenticatedHTTPRequest(method, endpoint string, values 
 	err = JSONDecode([]byte(resp), &result)
 
 	if err != nil {
-		return errors.New("Unable to JSON Unmarshal response.")
+		return err
 	}
 	return nil
 }
