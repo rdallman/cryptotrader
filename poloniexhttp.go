@@ -144,57 +144,55 @@ func (p *Poloniex) Run() {
 
 	//	for p.Enabled {
 
-	for _, currency := range p.EnabledPairs {
-		//go func() {
-		//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
-		//}()
+	//go func() {
+	//log.Printf("Poloniex=%s Last=%f High=%f Low=%f Volume=%f Ask=%f Bid=%f EMA13=%f EMA41=%f\n", currency, t.Last, t.High24Hr, t.Low24Hr, t.QuoteVolume, t.LowestAsk, t.HighestBid, f, s)
+	//}()
 
-		// TODO add slippage penalty to sims
-		// TODO add a stop limit for -20% for every order? just in case...
-		// TODO this fucked up, test 2016/06/13 00:00:18 WARN couldn't place order. bailing for now. maybe postOnly=true? currency=BTC_ETH rate=0.023201 amount=1.897850 lending_rate=0.005000 buy=false err=error unmarshaling json: json: cannot unmarshal string into Go value of type int64 text: {"success":1,"message":"Margin order placed.","orderNumber":"67936208935","resultingTrades":[{"amount":"1.89785002","date":"2016-06-13 04:00:18","rate":"0.02320394","total":"0.04403759","tradeID":"11160991","type":"sell"}]}
-		// TODO last candle / tick candles seem fucked up. need to wait until past candle close then get last candle close, not current candle
+	// TODO add slippage penalty to sims
+	// TODO add a stop limit for -20% for every order? just in case...
+	// TODO this fucked up, test 2016/06/13 00:00:18 WARN couldn't place order. bailing for now. maybe postOnly=true? currency=BTC_ETH rate=0.023201 amount=1.897850 lending_rate=0.005000 buy=false err=error unmarshaling json: json: cannot unmarshal string into Go value of type int64 text: {"success":1,"message":"Margin order placed.","orderNumber":"67936208935","resultingTrades":[{"amount":"1.89785002","date":"2016-06-13 04:00:18","rate":"0.02320394","total":"0.04403759","tradeID":"11160991","type":"sell"}]}
+	// TODO last candle / tick candles seem fucked up. need to wait until past candle close then get last candle close, not current candle
 
-		p.realTrade(toTrade, currency)
+	p.realTrade(toTrade, currency)
 
-		// BUY THE FARM
-		//p.allIn(toTrade, currency, true)
-		//p.CloseMarginPosition(currency)
+	// BUY THE FARM
+	//p.allIn(toTrade, currency, true)
+	//p.CloseMarginPosition(currency)
 
-		// SELL THE FARM
-		//p.allIn(toTrade, currency, false)
-		//p.CloseMarginPosition(currency)
+	// SELL THE FARM
+	//p.allIn(toTrade, currency, false)
+	//p.CloseMarginPosition(currency)
 
-		// TODO sims lay below, extract somehow
-		//	p.tryAll(currency)
+	// TODO sims lay below, extract somehow
+	//	p.tryAll(currency)
 
-		// TODO test:
-		// #1 22/31/2 @120 .01 breakout -> 1200@6mos .59 tharp 90 trades || .001 breakout -> 1350@6mos .82 tharp 114 trades -> non-cum: profit%=265.179925 profit=2.651799 fees=0.178200 %win=0.392857 avgW=0.101253 %loss=0.607143 avgL=-0.026520 trades=112 tharp=0.892796
+	// TODO test:
+	// #1 22/31/2 @120 .01 breakout -> 1200@6mos .59 tharp 90 trades || .001 breakout -> 1350@6mos .82 tharp 114 trades -> non-cum: profit%=265.179925 profit=2.651799 fees=0.178200 %win=0.392857 avgW=0.101253 %loss=0.607143 avgL=-0.026520 trades=112 tharp=0.892796
 
-		// #2 19/23/5 @120 .01 breakout -> 1500%@6mos .63 tharp 93 trades -> non-cum: profit%=296.948102 profit=2.969481 fees=0.150100 %win=0.484211 avgW=0.095179 %loss=0.515789 avgL=-0.028750 trades=95 tharp=1.087239
-		// #2 14/24/5 @120 .01 breakout -> 1500%@6mos .59 tharp 106 trades -> non-cum: profit%=296.612907 profit=2.966129 fees=0.168000 %win=0.452830 avgW=0.096954 %loss=0.547170 avgL=-0.029098 trades=106 tharp=0.961669
+	// #2 19/23/5 @120 .01 breakout -> 1500%@6mos .63 tharp 93 trades -> non-cum: profit%=296.948102 profit=2.969481 fees=0.150100 %win=0.484211 avgW=0.095179 %loss=0.515789 avgL=-0.028750 trades=95 tharp=1.087239
+	// #2 14/24/5 @120 .01 breakout -> 1500%@6mos .59 tharp 106 trades -> non-cum: profit%=296.612907 profit=2.966129 fees=0.168000 %win=0.452830 avgW=0.096954 %loss=0.547170 avgL=-0.029098 trades=106 tharp=0.961669
 
-		//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150, 180, 210, 240} {
-		//log.Printf("days: %d", days)
-		//p.tryOne(currency, days, 5, 1, 5)
-		//p.tryOne(currency, days, 29, 37, 90)
-		//p.tryOne(currency, days, 29, 37, 120)
-		//p.tryOne(currency, days, 17, 30, 120)
-		//p.tryOne(currency, days, 22, 31, 120)
-		//p.tryOne(currency, days, 47, 81, 120)
-		//p.tryOne(currency, days, 40, 86, 120)
-		//p.tryOne(currency, days, 50, 85, 120)
-		//p.tryOne(currency, days, 37, 47, 120)
-		//p.tryOne(currency, days, 33, 63, 120)
-		//p.tryOne(currency, days, 46, 49, 120)
-		//p.tryOne(currency, days, 19, 23, 120)
-		//p.tryOne(currency, days, 14, 24, 120)
-		//p.tryOne(currency, days, 11, 29, 120)
-		//p.tryOne(currency, days, 45, 200, 120)
-		//}
+	//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150, 180, 210, 240} {
+	//log.Printf("days: %d", days)
+	//p.tryOne(currency, days, 5, 1, 5)
+	//p.tryOne(currency, days, 29, 37, 90)
+	//p.tryOne(currency, days, 29, 37, 120)
+	//p.tryOne(currency, days, 17, 30, 120)
+	//p.tryOne(currency, days, 22, 31, 120)
+	//p.tryOne(currency, days, 47, 81, 120)
+	//p.tryOne(currency, days, 40, 86, 120)
+	//p.tryOne(currency, days, 50, 85, 120)
+	//p.tryOne(currency, days, 37, 47, 120)
+	//p.tryOne(currency, days, 33, 63, 120)
+	//p.tryOne(currency, days, 46, 49, 120)
+	//p.tryOne(currency, days, 19, 23, 120)
+	//p.tryOne(currency, days, 14, 24, 120)
+	//p.tryOne(currency, days, 11, 29, 120)
+	//p.tryOne(currency, days, 45, 200, 120)
+	//}
 
-		//time.Sleep(time.Second * p.RESTPollingDelay)
-		//}
-	}
+	//time.Sleep(time.Second * p.RESTPollingDelay)
+	//}
 }
 
 func (p *Poloniex) balance(side string) float64 {
