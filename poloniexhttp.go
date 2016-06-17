@@ -239,15 +239,19 @@ func (p *Poloniex) realTrade(side, currency string) {
 	log.Printf("open pos found: type=%s price=%f amount=%f total=%f p/l=%f lending_fees=%f", open.Type, open.BasePrice, open.Amount, open.Total, open.ProfitLoss, open.LendingFees)
 
 	var profit, fees float64
-	fast, slow, sig := 14, 24, 5 // TODO make these configuramable ?
+	fast, slow, sig := 11, 29, 5 // TODO make these configuramable ?
 	const candle = 7200          // 2hr candle; candlestick period in seconds; valid values are 300, 900, 1800, 7200, 14400, and 86400
 	emaFast := ema(fast)
 	emaSlow := ema(slow)
 	signal := ema(sig)
 
 	// get enough back data to seed the fast / slow emas so we can start trading..
-	lastData := time.Now()
-	timemachine := time.Duration(int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
+	// get 1 more than the last tick and save a tick so that we might immediately
+	// close/open a position. the loop ends up always getting the tick from approx:
+	// now() - candle, in order to read the full candle close (for charts yo)
+
+	lastData := time.Now().Add(-2 * candle * time.Second)
+	timemachine := time.Duration(sig+int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
 	start := strconv.Itoa(int(lastData.Add(-timemachine).Unix()))
 	end := strconv.Itoa(int(lastData.Unix()))
 	period := strconv.Itoa(candle)
@@ -263,20 +267,13 @@ func (p *Poloniex) realTrade(side, currency string) {
 		lastData = time.Unix(int64(pt.Date), 0)
 	}
 
-	nextTime := lastData.Add(candle * time.Second).Sub(time.Now())
-	tick := time.After(nextTime)
-
-	var pt PoloniexChartData
-	for {
-		<-tick
-
-		var errCount int
+	// TODO this doesn't gracefully handle missing ticks but trying to use lastData..lastData+candle kept giving lastData pt so fuck it
+	lastCandle := func(lastData time.Time) PoloniexChartData {
 		// retry for 2 minutes, and then bail
-
-		// TODO this doesn't gracefully handle missing ticks but trying to use lastData..lastData+candle kept giving lastData pt so fuck it
+		var errCount int
 		for ; ; time.Sleep(4 * time.Second) {
-			tryS := strconv.Itoa(int(lastData.Unix()))
-			tryE := strconv.Itoa(int(lastData.Add(candle * time.Second).Unix()))
+			tryS := strconv.Itoa(int(lastData.Add(candle * time.Second).Unix()))
+			tryE := strconv.Itoa(int(lastData.Add(2 * candle * time.Second).Unix()))
 			// just get one data point
 			c, err := p.GetChartData(currency, tryS, tryE, period)
 			if err != nil {
@@ -291,7 +288,7 @@ func (p *Poloniex) realTrade(side, currency string) {
 				continue
 			}
 
-			pt = c[0]
+			pt := c[0]
 			for _, p := range c { // sometimes we get 2 data points, probably should check these are contiguous but blech
 				if time.Unix(int64(p.Date), 0).Unix() != lastData.Unix() {
 					pt = p
@@ -303,12 +300,20 @@ func (p *Poloniex) realTrade(side, currency string) {
 				continue
 			}
 
-			lastData = time.Unix(int64(pt.Date), 0)
-			break
+			return pt
 		}
+	}
 
-		nextTime := lastData.Add(candle * time.Second).Sub(time.Now())
+	// immediately do the first tick so that we might open a position
+	tick := time.After(0)
+	for {
+		<-tick
 
+		pt := lastCandle(lastData)
+
+		lastData = time.Unix(int64(pt.Date), 0)
+
+		nextTime := lastData.Add(2 * candle * time.Second).Sub(time.Now())
 		tick = time.After(nextTime)
 
 		log.Printf("tick t=%v high=%f low=%f open=%f close=%f %%=%f volume=%f pos=%s@%f", time.Unix(int64(pt.Date), 0), pt.High, pt.Low, pt.Open, pt.Close, 100*((pt.Close-pt.Open)/pt.Open), pt.Volume, pos, lastBuy)
@@ -853,75 +858,81 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 	f := emaFast(price)
 	s := emaSlow(price)
 
+	if f == notTrained || s == notTrained {
+		return
+	}
+
 	// MACD Line: (12-day EMA - 26-day EMA)
 	// Signal Line: 9-day EMA of MACD Line
 	macd := f - s
 	v := signal(macd)
 
+	if v == notTrained {
+		return
+	}
+
 	diff := ((macd - v) / ((macd + v) / 2))
 	breakout := diff >= .01 // make sure breakout is real to avoid fakeouts
 
-	if f != notTrained && s != notTrained && v != notTrained {
-		// go long if macd > 0 && macd > v
-		// close long if macd < 0 || macd < v
-		// go short if macd < 0 && macd < v
-		// close short if macd > 0 || macd > v
+	// go long if macd > 0 && macd > v
+	// close long if macd < 0 || macd < v
+	// go short if macd < 0 && macd < v
+	// close short if macd > 0 || macd > v
 
-		// TODO calculate exposure
+	// TODO calculate exposure
 
-		// close order first
-		if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd <= v) {
-			// close long
-			mult := 1. + *profit // NOTE: add profit back for compound
-			p := mult * ((price - *lastBuy) / *lastBuy)
-			// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
+	// close order first
+	if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd <= v) {
+		// close long
+		mult := 1. + *profit // NOTE: add profit back for compound
+		p := mult * ((price - *lastBuy) / *lastBuy)
+		// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
 
-			// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
-			f := fee * mult
-			*fees += f
-			*profit += p - f
-			*last = none
-		} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd >= v) {
-			// close short
-			mult := 1. + *profit // NOTE: add profit back for compound
+		// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+		f := fee * mult
+		*fees += f
+		*profit += p - f
+		*last = none
+	} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd >= v) {
+		// close short
+		mult := 1. + *profit // NOTE: add profit back for compound
 
-			p := mult * ((*lastBuy - price) / *lastBuy)
-			// change profit in terms of eth_btc to be in terms of eth
+		p := mult * ((*lastBuy - price) / *lastBuy)
+		// change profit in terms of eth_btc to be in terms of eth
 
-			// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
-			//const lending = .0002
-			f := (fee * mult) + (.0002 * mult)
+		// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
+		//const lending = .0002
+		f := (fee * mult) + (.0002 * mult)
 
-			*fees += f
-			*profit += p - f
-			*last = none
+		*fees += f
+		*profit += p - f
+		*last = none
+	}
+
+	if *last == none && *lastBuy == 0 { // nope
+		if macd < v {
+			*last = short
+		} else {
+			*last = long
 		}
+		*lastBuy = price // TODO test just doing the thing
+		// don't set price, just wait for a crossover
+	}
 
-		if *last == none && *lastBuy == 0 { // nope
-			if macd < v {
-				*last = short
-			} else {
-				*last = long
-			}
-			*lastBuy = price // TODO test just doing the thing
-			// don't set price, just wait for a crossover
+	// open new ones, if necessary
+	if /*macd < 0 &&*/ macd < v && breakout { // TODO confirm < 0 ?
+		// only go short if on the first trade, we were looking for a short xover or we were in cash.
+		// i.e. don't make the first trade until the first xover...
+		if *last == none || (*lastBuy == 0 && *last == long) {
+			*lastBuy = price
+			*last = short
+			//	log.Printf("msg=SHORT price=%f", price)
 		}
-
-		// open new ones, if necessary
-		if /*macd < 0 &&*/ macd < v && breakout { // TODO confirm < 0 ?
-			// only go short if on the first trade, we were looking for a short xover or we were in cash.
-			// i.e. don't make the first trade until the first xover...
-			if *last == none || (*lastBuy == 0 && *last == long) {
-				*lastBuy = price
-				*last = short
-				//	log.Printf("msg=SHORT price=%f", price)
-			}
-		} else if /*macd > 0 &&*/ macd > v && breakout { // TODO confirm > 0 ?
-			if *last == none || (*lastBuy == 0 && *last == short) {
-				*last = long
-				*lastBuy = price
-				//	log.Printf("msg=LONG price=%f", price)
-			}
+	} else if /*macd > 0 &&*/ macd > v && breakout { // TODO confirm > 0 ?
+		if *last == none || (*lastBuy == 0 && *last == short) {
+			*last = long
+			*lastBuy = price
+			//	log.Printf("msg=LONG price=%f", price)
 		}
 	}
 }
@@ -929,43 +940,46 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 func tradeEMA(price float64, lastBuy, profit, fees *float64, last *dir, emaFast, emaSlow func(float64) float64) {
 	f := emaFast(price)
 	s := emaSlow(price)
-	if f != notTrained && s != notTrained {
-		if *last == none && *lastBuy == 0 { // set so we can see direction
-			if f > s {
-				*last = long
-			} else {
-				*last = short
-			}
+	if f == notTrained || s == notTrained {
+		return
+	}
+
+	if *last == none && *lastBuy == 0 { // set so we can see direction
+		if f > s {
+			*last = long
 		} else {
-			if f < s && *last == long {
-				*last = short
-
-				if *lastBuy > 0 {
-					mult := 1. //+ *profit // NOTE: add profit back for compound
-					p := mult * ((price - *lastBuy) / *lastBuy)
-
-					// log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
-					f := (fee * mult)
-
-					*fees += f
-					*profit += p - f
-				}
-				*lastBuy = price
-			} else if f > s && *last == short {
-				*last = long
-
-				if *lastBuy > 0 {
-					mult := 1. //+ *profit // NOTE: add profit back for compound
-					p := mult * ((*lastBuy - price) / *lastBuy)
-					// log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
-					f := (fee * mult) + (.0002 * mult)
-
-					*fees += f
-					*profit += p - f
-				}
-				*lastBuy = price
-			}
+			*last = short
 		}
+		return
+	}
+
+	if f < s && *last == long {
+		*last = short
+
+		if *lastBuy > 0 {
+			mult := 1. //+ *profit // NOTE: add profit back for compound
+			p := mult * ((price - *lastBuy) / *lastBuy)
+
+			// log.Printf("msg=SHORT msg2=LONGPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+			f := (fee * mult)
+
+			*fees += f
+			*profit += p - f
+		}
+		*lastBuy = price
+	} else if f > s && *last == short {
+		*last = long
+
+		if *lastBuy > 0 {
+			mult := 1. //+ *profit // NOTE: add profit back for compound
+			p := mult * ((*lastBuy - price) / *lastBuy)
+			// log.Printf("msg=LONG msg2=SHORTPROFITS buy=%f price=%f profit=%f total_profit=%f", *lastBuy, price, p, *profit+p)
+			f := (fee * mult) + (.0002 * mult)
+
+			*fees += f
+			*profit += p - f
+		}
+		*lastBuy = price
 	}
 }
 
