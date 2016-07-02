@@ -173,22 +173,30 @@ func (p *Poloniex) Run() {
 	// #2 14/24/5 @120 .01 breakout -> 1500%@6mos .59 tharp 106 trades -> non-cum: profit%=296.612907 profit=2.966129 fees=0.168000 %win=0.452830 avgW=0.096954 %loss=0.547170 avgL=-0.029098 trades=106 tharp=0.961669
 
 	//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150, 180, 210, 240} {
+	//for _, days := range []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200} {
 	//log.Printf("days: %d", days)
 	//p.tryOne(currency, days, 5, 1, 5)
-	//p.tryOne(currency, days, 29, 37, 90)
 	//p.tryOne(currency, days, 29, 37, 120)
 	//p.tryOne(currency, days, 17, 30, 120)
-	//p.tryOne(currency, days, 22, 31, 120)
+	//p.tryOne(currency, days, 22, 31, 120) // sig=2
 	//p.tryOne(currency, days, 47, 81, 120)
 	//p.tryOne(currency, days, 40, 86, 120)
 	//p.tryOne(currency, days, 50, 85, 120)
 	//p.tryOne(currency, days, 37, 47, 120)
 	//p.tryOne(currency, days, 33, 63, 120)
 	//p.tryOne(currency, days, 46, 49, 120)
-	//p.tryOne(currency, days, 19, 23, 120)
-	//p.tryOne(currency, days, 14, 24, 120)
-	//p.tryOne(currency, days, 11, 29, 120)
+	//p.tryOne(currency, days, 19, 23, 120) // sig=5
+	//p.tryOne(currency, days, 14, 24, 120) // sig=5
+	//p.tryOne(currency, days, 11, 29, 120) // sig=5 SUPREME LEADA
 	//p.tryOne(currency, days, 45, 200, 120)
+	//p.tryOne(currency, days, 50, 175, 120) // sig=10
+	//p.tryOne(currency, days, 40, 200, 120) // sig=10
+	//p.tryOne(currency, days, 3, 8, 120)  // sig=2 breakout=true
+	//p.tryOne(currency, days, 1, 40, 120) // sig=5 breakout=true
+	//p.tryOne(currency, days, 2, 14, 120) // sig=2 breakout=true
+	//p.tryOne(currency, days, 2, 45, 120) // sig=2 breakout=true
+	//p.tryOne(currency, days, 23, 115, 120) // sig=10 breakout=true
+	//p.tryOne(currency, days, 12, 19, 120) // sig=10 breakout=true
 	//}
 
 	//time.Sleep(time.Second * p.RESTPollingDelay)
@@ -249,6 +257,8 @@ func (p *Poloniex) realTrade(side, currency string) {
 	// get 1 more than the last tick and save a tick so that we might immediately
 	// close/open a position. the loop ends up always getting the tick from approx:
 	// now() - candle, in order to read the full candle close (for charts yo)
+
+	// TODO need to get candle ~1 minute after it closes, so data is complete. meh
 
 	lastData := time.Now().Add(-2 * candle * time.Second)
 	timemachine := time.Duration(sig+int(math.Max(float64(fast), float64(slow)))) * candle * time.Second
@@ -459,7 +469,8 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 			log.Printf("canceling open order, will make new one if still not filled. order=%d", orderNum)
 			_, err := p.CancelOrder(orderNum)
 			if err != nil {
-				log.Printf("couldn't cancel order. maybe filled? order=%d err=%v", orderNum, err)
+				log.Printf("couldn't cancel order. maybe filled? bailing. order=%d err=%v", orderNum, err)
+				break
 			}
 		}
 
@@ -549,32 +560,33 @@ func (p *Poloniex) tryOne(currency string, days, fast, slow, tick int) {
 
 func (p *Poloniex) tryAll(currency string) {
 	var maxProfit, fees, first, bestTh float64
-	var bestF, bestS, bestT int
+	var bestF, bestS, bestSig int
 
 	const maxFast = 50
 	const maxSlow = 200
-	const maxTick = 24
-	//maxSig := 10
-	sig := 2
+	//const maxTick = 24
+	const maxSig = 10
+	// sig := 5
+	tick := 24 // 2hr candle
 
 	// y = tick, x = fast/slow ema combos
 	matrix := make([][]float64, maxFast*maxSlow)
 
-	var cur, avg [maxFast * maxSlow * maxTick]rank
+	var cur, avg [maxFast * maxSlow * maxSig]rank
 
 	var left [][3]int
 	for fast := 1; fast <= maxFast; fast++ {
 		for slow := 1; slow <= maxSlow; slow++ {
 			left = append(left, [3]int{fast, slow, 0})
-			for tick := 1; tick <= maxTick; tick++ {
-				p := [3]int{fast, slow, tick}
-				avg[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick] = rank{p: p}
+			for sig := 1; sig <= maxSig; sig++ {
+				p := [3]int{fast, slow, sig}
+				avg[(sig-1)+(slow-1)*maxSig+(fast-1)*maxSlow*maxSig] = rank{p: p}
 			}
 		}
 	}
 
-	trials := 240
-	shortest := 240
+	trials := 210
+	shortest := 210
 	_ = shortest
 
 	for days := shortest; days <= trials; days++ {
@@ -596,16 +608,16 @@ func (p *Poloniex) tryAll(currency string) {
 		var i int
 		for fast := 1; fast <= maxFast; fast++ {
 			for slow := 1; slow <= maxSlow; slow++ {
-				matrix[i] = make([]float64, maxTick)
-				for tick := 1; tick <= maxTick; tick++ { // up to 2 hours
+				matrix[i] = make([]float64, maxSig)
+				for sig := 1; sig <= maxSig; sig++ { // up to 2 hours
 					tharp, profit, f := tryEma(fast, slow, sig, tick, c)
 					p := 100 * (profit / 1)
-					matrix[i][tick-1] = p
+					matrix[i][sig-1] = p
 					if profit > maxProfit {
 						//if tharp > bestTh && !math.IsNaN(tharp) {
-						maxProfit, fees, bestF, bestS, bestT, bestTh = profit, f, fast, slow, tick, tharp
+						maxProfit, fees, bestF, bestS, bestSig, bestTh = profit, f, fast, slow, sig, tharp
 					}
-					cur[(tick-1)+(slow-1)*maxTick+(fast-1)*maxSlow*maxTick] = rank{p: [3]int{fast, slow, tick}, a: p}
+					cur[(sig-1)+(slow-1)*maxSig+(fast-1)*maxSlow*maxSig] = rank{p: [3]int{fast, slow, sig}, a: p}
 				}
 				i++
 			}
@@ -615,7 +627,7 @@ func (p *Poloniex) tryAll(currency string) {
 		sort.Stable(profits(cur[:]))
 		for i, c := range cur {
 			// track total ranks thus far, average later
-			avg[(c.p[2]-1)+(c.p[1]-1)*maxTick+(c.p[0]-1)*maxSlow*maxTick].a += float64(i + 1)
+			avg[(c.p[2]-1)+(c.p[1]-1)*maxSig+(c.p[0]-1)*maxSlow*maxSig].a += float64(i + 1)
 		}
 	}
 
@@ -625,7 +637,7 @@ func (p *Poloniex) tryAll(currency string) {
 
 	sort.Stable(ranks(avg[:]))
 
-	fmt.Println("leaderboard: [fast/slow/tick]: [avg rank]")
+	fmt.Println("leaderboard: [fast/slow/sig]: [avg rank]")
 	fmt.Println()
 	for i, a := range avg {
 		fmt.Printf("%10d: %3d/%3d/%3d: %9.3f\n", i+1, a.p[0], a.p[1], a.p[2], a.a)
@@ -634,7 +646,7 @@ func (p *Poloniex) tryAll(currency string) {
 	//fast, slow, tick := 13, 41, 12
 	//profit, f := tryEma(fast, slow, tick, c)
 	//maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
-	log.Printf("%s best: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f tharp=%f", currency, bestF, bestS, bestT*5, 100*(maxProfit/1), maxProfit, fees, first, bestTh)
+	log.Printf("%s best: f=%d s=%d sig=%d t=%d profit%%=%f profit=%f fees=%f price=%f tharp=%f", currency, bestF, bestS, bestSig, tick, 100*(maxProfit/1), maxProfit, fees, first, bestTh)
 
 	// find best box, by fast ema
 	var maxBox float64
@@ -650,7 +662,7 @@ func (p *Poloniex) tryAll(currency string) {
 	}
 
 	log.Printf("%s best box: maxBox=%f top=%d/%d left=%d bottom=%d/%d right=%d", currency, maxBox, left[top][0], left[top][1], leftN, left[bottom][0], left[bottom][1], right)
-	//graph(matrix, left, bestTh)
+	// graph(matrix, left, bestTh)
 	graph(matrix, left, 100*(maxProfit/1))
 }
 
@@ -871,8 +883,22 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		return
 	}
 
-	diff := ((macd - v) / ((macd + v) / 2))
-	breakout := diff >= .01 // make sure breakout is real to avoid fakeouts
+	// stop losses
+	stopLoss := .05
+	// TODO add drift to these, also they aren't precise since w/i the candle
+	// they could have been tipped off, but it will help mitigate larger losses in data regardless
+	// TODO ends up entering position again if we get stopped out; don't do that, even though
+	// it appears to aid significantly if the candles are large enough, we should wait for reversal
+	//stopShortPrice := (*lastBuy) + (stopLoss * (*lastBuy))
+	//stopLongPrice := (*lastBuy) - (stopLoss * (*lastBuy))
+	//stopShort := price >= stopShortPrice
+	//stopLong := price <= stopLongPrice
+
+	// TODO figure these out..
+	stopShort, stopLong := false, false
+
+	//diff := (math.Abs(macd-v) / ((macd + v) / 2))
+	breakout := true // diff >= .0000001 // make sure breakout is real to avoid fakeouts. TODO why is this fucked?
 
 	// go long if macd > 0 && macd > v
 	// close long if macd < 0 || macd < v
@@ -882,10 +908,16 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 	// TODO calculate exposure
 
 	// close order first
-	if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd <= v) {
+	if *lastBuy > 0 && *last == long && (stopLong || ( /*macd < 0 ||*/ macd <= v)) {
 		// close long
 		mult := 1. + *profit // NOTE: add profit back for compound
-		p := mult * ((price - *lastBuy) / *lastBuy)
+
+		var p float64
+		if stopLong {
+			p = mult * -stopLoss
+		} else {
+			p = mult * ((price - *lastBuy) / *lastBuy)
+		}
 		// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
 
 		// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
@@ -893,11 +925,16 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		*fees += f
 		*profit += p - f
 		*last = none
-	} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd >= v) {
+	} else if *lastBuy > 0 && *last == short && (stopShort || ( /*macd > 0 ||*/ macd >= v)) {
 		// close short
 		mult := 1. + *profit // NOTE: add profit back for compound
 
-		p := mult * ((*lastBuy - price) / *lastBuy)
+		var p float64
+		if stopShort {
+			p = mult * -stopLoss
+		} else {
+			p = mult * ((*lastBuy - price) / *lastBuy)
+		}
 		// change profit in terms of eth_btc to be in terms of eth
 
 		// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
@@ -924,8 +961,8 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		// only go short if on the first trade, we were looking for a short xover or we were in cash.
 		// i.e. don't make the first trade until the first xover...
 		if *last == none || (*lastBuy == 0 && *last == long) {
-			*lastBuy = price
 			*last = short
+			*lastBuy = price
 			//	log.Printf("msg=SHORT price=%f", price)
 		}
 	} else if /*macd > 0 &&*/ macd > v && breakout { // TODO confirm > 0 ?
@@ -1460,7 +1497,7 @@ type PoloniexResultingTrades struct {
 	Rate    float64 `json:"rate,string"`
 	Total   float64 `json:"total,string"`
 	TradeID int64   `json:"tradeID,string"`
-	Type    string  `json:"type,string"`
+	Type    string  `json:"type"`
 }
 
 // since the api is all fucked up and sometimes tradeids aren't strings..
