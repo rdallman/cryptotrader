@@ -1,10 +1,6 @@
 package main
 
-import (
-	"gopkg.in/jcelliott/turnpike.v2"
-	"log"
-	"strconv"
-)
+import "strconv"
 
 const (
 	POLONIEX_WEBSOCKET_ADDRESS  = "wss://api.poloniex.com"
@@ -131,49 +127,49 @@ func PoloniexOnDepthOrTrade(args []interface{}, kwargs map[string]interface{}) {
 }
 
 func (p *Poloniex) WebsocketClient() {
-	for p.Enabled && p.Websocket {
-		c, err := turnpike.NewWebsocketClient(turnpike.JSON, POLONIEX_WEBSOCKET_ADDRESS, nil)
-		if err != nil {
-			log.Printf("%s Unable to connect to Websocket. Error: %s\n", p.GetName(), err)
-			continue
-		}
+	//for p.Enabled && p.Websocket {
+	//c, err := turnpike.NewWebsocketClient(turnpike.JSON, POLONIEX_WEBSOCKET_ADDRESS, nil)
+	//if err != nil {
+	//log.Printf("%s Unable to connect to Websocket. Error: %s\n", p.GetName(), err)
+	//continue
+	//}
 
-		if p.Verbose {
-			log.Printf("%s Connected to Websocket.\n", p.GetName())
-		}
+	//if p.Verbose {
+	//log.Printf("%s Connected to Websocket.\n", p.GetName())
+	//}
 
-		_, err = c.JoinRealm(POLONIEX_WEBSOCKET_REALM, nil)
-		if err != nil {
-			log.Printf("%s Unable to join realm. Error: %s\n", p.GetName(), err)
-			continue
-		}
+	//_, err = c.JoinRealm(POLONIEX_WEBSOCKET_REALM, nil)
+	//if err != nil {
+	//log.Printf("%s Unable to join realm. Error: %s\n", p.GetName(), err)
+	//continue
+	//}
 
-		if p.Verbose {
-			log.Printf("%s Joined Websocket realm.\n", p.GetName())
-		}
+	//if p.Verbose {
+	//log.Printf("%s Joined Websocket realm.\n", p.GetName())
+	//}
 
-		c.ReceiveDone = make(chan bool)
+	//c.ReceiveDone = make(chan bool)
 
-		if err := c.Subscribe(POLONIEX_WEBSOCKET_TICKER, PoloniexOnTicker); err != nil {
-			log.Printf("%s Error subscribing to ticker channel: %s\n", p.GetName(), err)
-		}
+	//if err := c.Subscribe(POLONIEX_WEBSOCKET_TICKER, PoloniexOnTicker); err != nil {
+	//log.Printf("%s Error subscribing to ticker channel: %s\n", p.GetName(), err)
+	//}
 
-		if err := c.Subscribe(POLONIEX_WEBSOCKET_TROLLBOX, PoloniexOnTrollbox); err != nil {
-			log.Printf("%s Error subscribing to trollbox channel: %s\n", p.GetName(), err)
-		}
+	//if err := c.Subscribe(POLONIEX_WEBSOCKET_TROLLBOX, PoloniexOnTrollbox); err != nil {
+	//log.Printf("%s Error subscribing to trollbox channel: %s\n", p.GetName(), err)
+	//}
 
-		for x := range p.EnabledPairs {
-			currency := p.EnabledPairs[x]
-			if err := c.Subscribe(currency, PoloniexOnDepthOrTrade); err != nil {
-				log.Printf("%s Error subscribing to %s channel: %s\n", p.GetName(), currency, err)
-			}
-		}
+	//for x := range p.EnabledPairs {
+	//currency := p.EnabledPairs[x]
+	//if err := c.Subscribe(currency, PoloniexOnDepthOrTrade); err != nil {
+	//log.Printf("%s Error subscribing to %s channel: %s\n", p.GetName(), currency, err)
+	//}
+	//}
 
-		if p.Verbose {
-			log.Printf("%s Subscribed to websocket channels.\n", p.GetName())
-		}
+	//if p.Verbose {
+	//log.Printf("%s Subscribed to websocket channels.\n", p.GetName())
+	//}
 
-		<-c.ReceiveDone
-		log.Printf("%s Websocket client disconnected.\n", p.GetName())
-	}
+	//<-c.ReceiveDone
+	//log.Printf("%s Websocket client disconnected.\n", p.GetName())
+	//}
 }
