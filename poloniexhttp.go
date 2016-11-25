@@ -884,21 +884,20 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 	}
 
 	// stop losses
-	stopLoss := .05
+	//stopLoss := .05
 	// TODO add drift to these, also they aren't precise since w/i the candle
 	// they could have been tipped off, but it will help mitigate larger losses in data regardless
-	// TODO ends up entering position again if we get stopped out; don't do that, even though
-	// it appears to aid significantly if the candles are large enough, we should wait for reversal
 	//stopShortPrice := (*lastBuy) + (stopLoss * (*lastBuy))
 	//stopLongPrice := (*lastBuy) - (stopLoss * (*lastBuy))
 	//stopShort := price >= stopShortPrice
 	//stopLong := price <= stopLongPrice
 
 	// TODO figure these out..
-	stopShort, stopLong := false, false
+	//stopShort, stopLong := false, false
 
+	// TODO make sure macd actually 'breaks out' before flipping
 	//diff := (math.Abs(macd-v) / ((macd + v) / 2))
-	breakout := true // diff >= .0000001 // make sure breakout is real to avoid fakeouts. TODO why is this fucked?
+	//breakout := true // diff >= .0000001 // make sure breakout is real to avoid fakeouts. TODO why is this fucked?
 
 	// go long if macd > 0 && macd > v
 	// close long if macd < 0 || macd < v
@@ -908,16 +907,12 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 	// TODO calculate exposure
 
 	// close order first
-	if *lastBuy > 0 && *last == long && (stopLong || ( /*macd < 0 ||*/ macd <= v)) {
+	if *lastBuy > 0 && *last == long && ( /*macd < 0 ||*/ macd < v) {
 		// close long
 		mult := 1. + *profit // NOTE: add profit back for compound
 
 		var p float64
-		if stopLong {
-			p = mult * -stopLoss
-		} else {
-			p = mult * ((price - *lastBuy) / *lastBuy)
-		}
+		p = mult * ((price - *lastBuy) / *lastBuy)
 		// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
 
 		// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
@@ -925,16 +920,12 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		*fees += f
 		*profit += p - f
 		*last = none
-	} else if *lastBuy > 0 && *last == short && (stopShort || ( /*macd > 0 ||*/ macd >= v)) {
+	} else if *lastBuy > 0 && *last == short && ( /*macd > 0 ||*/ macd > v) {
 		// close short
 		mult := 1. + *profit // NOTE: add profit back for compound
 
 		var p float64
-		if stopShort {
-			p = mult * -stopLoss
-		} else {
-			p = mult * ((*lastBuy - price) / *lastBuy)
-		}
+		p = mult * ((*lastBuy - price) / *lastBuy)
 		// change profit in terms of eth_btc to be in terms of eth
 
 		// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
@@ -946,18 +937,8 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		*last = none
 	}
 
-	if *last == none && *lastBuy == 0 { // nope
-		if macd < v {
-			*last = short
-		} else {
-			*last = long
-		}
-		*lastBuy = price // TODO test just doing the thing
-		// don't set price, just wait for a crossover
-	}
-
 	// open new ones, if necessary
-	if /*macd < 0 &&*/ macd < v && breakout { // TODO confirm < 0 ?
+	if /*macd < 0 &&*/ macd < v { // TODO confirm < 0 ?
 		// only go short if on the first trade, we were looking for a short xover or we were in cash.
 		// i.e. don't make the first trade until the first xover...
 		if *last == none || (*lastBuy == 0 && *last == long) {
@@ -965,7 +946,7 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 			*lastBuy = price
 			//	log.Printf("msg=SHORT price=%f", price)
 		}
-	} else if /*macd > 0 &&*/ macd > v && breakout { // TODO confirm > 0 ?
+	} else if /*macd > 0 &&*/ macd > v { // TODO confirm > 0 ?
 		if *last == none || (*lastBuy == 0 && *last == short) {
 			*last = long
 			*lastBuy = price
