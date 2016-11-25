@@ -191,12 +191,12 @@ func (p *Poloniex) Run() {
 	//p.tryOne(currency, days, 45, 200, 120)
 	//p.tryOne(currency, days, 50, 175, 120) // sig=10
 	//p.tryOne(currency, days, 40, 200, 120) // sig=10
-	//p.tryOne(currency, days, 3, 8, 120)  // sig=2 breakout=true
-	//p.tryOne(currency, days, 1, 40, 120) // sig=5 breakout=true
-	//p.tryOne(currency, days, 2, 14, 120) // sig=2 breakout=true
-	//p.tryOne(currency, days, 2, 45, 120) // sig=2 breakout=true
+	//p.tryOne(currency, days, 3, 8, 120)    // sig=2 breakout=true
+	//p.tryOne(currency, days, 1, 40, 120)   // sig=5 breakout=true
+	//p.tryOne(currency, days, 2, 14, 120)   // sig=2 breakout=true
+	//p.tryOne(currency, days, 2, 45, 120)   // sig=2 breakout=true
 	//p.tryOne(currency, days, 23, 115, 120) // sig=10 breakout=true
-	//p.tryOne(currency, days, 12, 19, 120) // sig=10 breakout=true
+	//p.tryOne(currency, days, 12, 19, 120)  // sig=10 breakout=true
 	//}
 
 	//time.Sleep(time.Second * p.RESTPollingDelay)
@@ -247,7 +247,7 @@ func (p *Poloniex) realTrade(side, currency string) {
 	log.Printf("open pos found: type=%s price=%f amount=%f total=%f p/l=%f lending_fees=%f", open.Type, open.BasePrice, open.Amount, open.Total, open.ProfitLoss, open.LendingFees)
 
 	var profit, fees float64
-	fast, slow, sig := 11, 29, 5 // TODO make these configuramable ?
+	fast, slow, sig := 50, 85, 5 // TODO make these configuramable ?
 	const candle = 7200          // 2hr candle; candlestick period in seconds; valid values are 300, 900, 1800, 7200, 14400, and 86400
 	emaFast := ema(fast)
 	emaSlow := ema(slow)
@@ -553,7 +553,7 @@ func (p *Poloniex) tryOne(currency string, days, fast, slow, tick int) {
 
 	tharp, profit, f := tryEma(fast, slow, sig, tick, c)
 
-	log.Printf("%s profit: f=%d s=%d t=%d profit%%=%f profit=%f fees=%f price=%f tharp=%f", currency, fast, slow, tick*5, 100*(profit/1), profit, f, first, tharp)
+	log.Printf("%s profit: f= %d s= %d t= %d profit%%= %f profit= %f fees= %f price= %f tharp= %f", currency, fast, slow, tick*5, 100*(profit/1), profit, f, first, tharp)
 
 	// TODO print out each trade
 }
@@ -646,7 +646,7 @@ func (p *Poloniex) tryAll(currency string) {
 	//fast, slow, tick := 13, 41, 12
 	//profit, f := tryEma(fast, slow, tick, c)
 	//maxProfit, fees, bestF, bestS, bestT = profit, f, fast, slow, tick
-	log.Printf("%s best: f=%d s=%d sig=%d t=%d profit%%=%f profit=%f fees=%f price=%f tharp=%f", currency, bestF, bestS, bestSig, tick, 100*(maxProfit/1), maxProfit, fees, first, bestTh)
+	log.Printf("%s best: f= %d s= %d sig= %d t= %d profit%%= %f profit= %f fees= %f price= %f tharp= %f", currency, bestF, bestS, bestSig, tick, 100*(maxProfit/1), maxProfit, fees, first, bestTh)
 
 	// find best box, by fast ema
 	var maxBox float64
@@ -861,7 +861,7 @@ func tryEma(fast, slow, sig, tickC int, lines []PoloniexChartData) (tharp, profi
 
 	tharp = (avgWin*winPercent + avgLoss*lossPercent) / -avgLoss
 
-	log.Printf("expectancy: f=%d s=%d t=%d sig=%d profit%%=%f profit=%f fees=%f %%win=%f avgW=%f %%loss=%f avgL=%f trades=%d tharp=%f", fast, slow, tickC*5, sig, 100*(profit/1), profit, fees, winPercent, avgWin, lossPercent, avgLoss, len(winners)+len(losers), tharp)
+	log.Printf("expectancy: f= %d s= %d t= %d sig= %d profit%%= %f profit= %f fees= %f %%win= %f avgW= %f %%loss= %f avgL= %f trades= %d tharp= %f", fast, slow, tickC*5, sig, 100*(profit/1), profit, fees, winPercent, avgWin, lossPercent, avgLoss, len(winners)+len(losers), tharp)
 
 	return tharp, profit, fees
 }
