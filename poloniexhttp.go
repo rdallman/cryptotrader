@@ -153,7 +153,7 @@ func (p *Poloniex) Run() {
 	// TODO this fucked up, test 2016/06/13 00:00:18 WARN couldn't place order. bailing for now. maybe postOnly=true? currency=BTC_ETH rate=0.023201 amount=1.897850 lending_rate=0.005000 buy=false err=error unmarshaling json: json: cannot unmarshal string into Go value of type int64 text: {"success":1,"message":"Margin order placed.","orderNumber":"67936208935","resultingTrades":[{"amount":"1.89785002","date":"2016-06-13 04:00:18","rate":"0.02320394","total":"0.04403759","tradeID":"11160991","type":"sell"}]}
 	// TODO last candle / tick candles seem fucked up. need to wait until past candle close then get last candle close, not current candle
 
-	p.realTrade(toTrade, currency)
+	//p.realTrade(toTrade, currency)
 
 	// BUY THE FARM
 	//p.allIn(toTrade, currency, true)
@@ -172,32 +172,32 @@ func (p *Poloniex) Run() {
 	// #2 19/23/5 @120 .01 breakout -> 1500%@6mos .63 tharp 93 trades -> non-cum: profit%=296.948102 profit=2.969481 fees=0.150100 %win=0.484211 avgW=0.095179 %loss=0.515789 avgL=-0.028750 trades=95 tharp=1.087239
 	// #2 14/24/5 @120 .01 breakout -> 1500%@6mos .59 tharp 106 trades -> non-cum: profit%=296.612907 profit=2.966129 fees=0.168000 %win=0.452830 avgW=0.096954 %loss=0.547170 avgL=-0.029098 trades=106 tharp=0.961669
 
-	//for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150, 180, 210, 240} {
-	//for _, days := range []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200} {
-	//log.Printf("days: %d", days)
-	//p.tryOne(currency, days, 5, 1, 5)
-	//p.tryOne(currency, days, 29, 37, 120)
-	//p.tryOne(currency, days, 17, 30, 120)
-	//p.tryOne(currency, days, 22, 31, 120) // sig=2
-	//p.tryOne(currency, days, 47, 81, 120)
-	//p.tryOne(currency, days, 40, 86, 120)
-	//p.tryOne(currency, days, 50, 85, 120)
-	//p.tryOne(currency, days, 37, 47, 120)
-	//p.tryOne(currency, days, 33, 63, 120)
-	//p.tryOne(currency, days, 46, 49, 120)
-	//p.tryOne(currency, days, 19, 23, 120) // sig=5
-	//p.tryOne(currency, days, 14, 24, 120) // sig=5
-	//p.tryOne(currency, days, 11, 29, 120) // sig=5 SUPREME LEADA
-	//p.tryOne(currency, days, 45, 200, 120)
-	//p.tryOne(currency, days, 50, 175, 120) // sig=10
-	//p.tryOne(currency, days, 40, 200, 120) // sig=10
-	//p.tryOne(currency, days, 3, 8, 120)    // sig=2 breakout=true
-	//p.tryOne(currency, days, 1, 40, 120)   // sig=5 breakout=true
-	//p.tryOne(currency, days, 2, 14, 120)   // sig=2 breakout=true
-	//p.tryOne(currency, days, 2, 45, 120)   // sig=2 breakout=true
-	//p.tryOne(currency, days, 23, 115, 120) // sig=10 breakout=true
-	//p.tryOne(currency, days, 12, 19, 120)  // sig=10 breakout=true
-	//}
+	for _, days := range []int{7, 14, 21, 30, 60, 90, 120, 150, 180, 210, 240} {
+		//for _, days := range []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200} {
+		log.Printf("days: %d", days)
+		//p.tryOne(currency, days, 5, 1, 5)
+		//p.tryOne(currency, days, 29, 37, 120)
+		//p.tryOne(currency, days, 17, 30, 120)
+		//p.tryOne(currency, days, 22, 31, 120) // sig=2
+		//p.tryOne(currency, days, 47, 81, 120)
+		//p.tryOne(currency, days, 40, 86, 120)
+		p.tryOne(currency, days, 50, 85, 120)
+		//p.tryOne(currency, days, 37, 47, 120)
+		//p.tryOne(currency, days, 33, 63, 120)
+		//p.tryOne(currency, days, 46, 49, 120)
+		//p.tryOne(currency, days, 19, 23, 120) // sig=5
+		//p.tryOne(currency, days, 14, 24, 120) // sig=5
+		//p.tryOne(currency, days, 11, 29, 120) // sig=5 SUPREME LEADA
+		//p.tryOne(currency, days, 45, 200, 120)
+		//p.tryOne(currency, days, 50, 175, 120) // sig=10
+		//p.tryOne(currency, days, 40, 200, 120) // sig=10
+		//p.tryOne(currency, days, 3, 8, 120)    // sig=2 breakout=true
+		//p.tryOne(currency, days, 1, 40, 120)   // sig=5 breakout=true
+		//p.tryOne(currency, days, 2, 14, 120)   // sig=2 breakout=true
+		//p.tryOne(currency, days, 2, 45, 120)   // sig=2 breakout=true
+		//p.tryOne(currency, days, 23, 115, 120) // sig=10 breakout=true
+		//p.tryOne(currency, days, 12, 19, 120)  // sig=10 breakout=true
+	}
 
 	//time.Sleep(time.Second * p.RESTPollingDelay)
 	//}
@@ -919,7 +919,7 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		// NOTE compound ends up weighting later profits higher, which sucks (but shiny)
 
 		// log.Printf("msg=LONGPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
-		f := fee * mult
+		f := (fee * mult) + (.0002 * mult)
 		*fees += f
 		*profit += p - f
 		*last = none
@@ -934,7 +934,6 @@ func tradeMACD(price float64, lastBuy, profit, fees *float64, last *dir, emaFast
 		// log.Printf("msg=SHORTPROFITS buy=%f price=%f profit=%f gross_profit=%f net_profit=%f fee=%f", *lastBuy, price, p, *profit+p, *profit+p-f, f)
 		//const lending = .0002
 		f := (fee * mult) + (.0002 * mult)
-
 		*fees += f
 		*profit += p - f
 		*last = none
