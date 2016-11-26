@@ -427,6 +427,9 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 	var filled, avg float64
 	var trades uint64
 
+	// shave fees so we don't have to borrow anything
+	amount *= .975
+
 	log.Printf("opening trade %s %s %f@%f", currency, str, amount, rate)
 	postOnly := false // only take maker fee, TODO do this later? if it starts moving fast, would prefer to just get in so...
 	order, err := p.PlaceMarginOrder(currency, rate, amount, maxLendingRate, postOnly, buy)
