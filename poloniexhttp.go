@@ -473,7 +473,6 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 			_, err := p.CancelOrder(orderNum)
 			if err != nil {
 				log.Printf("couldn't cancel order. maybe filled? bailing. order=%d err=%v", orderNum, err)
-				break
 			}
 		}
 
