@@ -453,8 +453,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 		log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
 	}
 
-	// TODO need to make sure rounding isn't fucking us here
-	if filled == amount {
+	if amount-filled < 0.00000 { // fuckin floats
 		avg /= amount
 		log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
 		return
@@ -472,7 +471,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 			log.Printf("canceling open order, will make new one if still not filled. order=%d", orderNum)
 			_, err := p.CancelOrder(orderNum)
 			if err != nil {
-				log.Printf("couldn't cancel order. maybe filled? bailing. order=%d err=%v", orderNum, err)
+				log.Printf("couldn't cancel order. maybe filled? err=%v order=%d originalAmount=%f left=%f filled=%f %%filled=%f", err, orderNum, amount, amount-filled, filled, 100*(filled/amount))
 			}
 		}
 
@@ -523,8 +522,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 				log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
 			}
 
-			// TODO need to make sure rounding isn't fucking us here
-			if filled == amount {
+			if amount-filled < 0.00000 { // fuckin floats
 				avg /= amount
 				log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
 				return
