@@ -453,7 +453,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 		log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
 	}
 
-	if amount-filled < 0.00000 { // fuckin floats
+	if amount-filled <= 0.00000 { // fuckin floats
 		avg /= amount
 		log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
 		return
@@ -491,7 +491,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 			start = time.Now() // update this so that we sit at this price for a minute longer since we filled something
 		}
 
-		if amount-filled < 0.00000 { // fuckin floats
+		if amount-filled <= 0.00000 { // fuckin floats
 			avg /= amount
 			log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
 			return
@@ -522,7 +522,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 				log.Printf("trade executed for order %d: amount=%f rate=%f total=%f type=%s time=%s originalAmount=%f left=%f filled=%f %%filled=%f", orderNum, t.Amount, t.Rate, t.Total, t.Type, t.Date, amount, amount-filled, filled, 100*(filled/amount))
 			}
 
-			if amount-filled < 0.00000 { // fuckin floats
+			if amount-filled <= 0.00000 { // fuckin floats
 				avg /= amount
 				log.Printf("filled order for amount %f. trades=%d firstRate=%f avgRate=%f", amount, trades, startRate, avg)
 				return
