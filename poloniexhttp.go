@@ -506,7 +506,7 @@ func (p *Poloniex) trade(currency string, amount float64, buy bool) {
 
 			log.Printf("re-opening trade at different price %s %s %f@%f", currency, str, amount-filled, rate)
 			order, err = p.PlaceMarginOrder(currency, rate, amount-filled, maxLendingRate, postOnly, buy)
-			if err != nil {
+			if err != nil || order.OrderNumber == 0 {
 				log.Printf("WARN couldn't place order. bailing. maybe postOnly=true? currency=%s rate=%f amount=%f lending_rate=%f buy=%v err=%v", currency, rate, amount, maxLendingRate, buy, err)
 				return
 			}
