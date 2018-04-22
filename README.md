@@ -1,3 +1,26 @@
+## FORKED notice
+
+this is a heavily modified version of the forked which needs to be better
+encapsulated should I one day regain motivation to unearth this project.
+however, I believe in OSS and there are some what I believe to be useful bits
+I'd like to keep for eternity and share with other people so that they can
+make better things too. I am not responsible for any monetary wins or losses,
+but you are free to use this code. I can not honestly recommend willy nilly
+pointing it at any of your accounts unless you have run sufficient backtesting
+and really know what you are doing.
+
+modifications include:
+* backtesting support of algorithms (have to modify & recompile, atm), with
+  [matrix] heatmaps of profitability and some computations to determine
+  highest profitability 'hot spots' to avoid anomolous curve fitting, as well
+  as tharp expectancy and fees accrued.
+* ability to monitor and place trades based on heuristics
+* simple ema / macd crossover trade & backtesting support (short & long, on margin)
+
+this is pretty gnarly and not easy to modify, written in a coffee fueled
+greedy rage, but there's useful stuff in there. one day, i'll get back to
+this...
+
 ## Cryptocurrency trading bot written in Golang
 
 [![Build Status](https://travis-ci.org/thrasher-/gocryptotrader.svg?branch=master)](https://travis-ci.org/thrasher-/gocryptotrader)
